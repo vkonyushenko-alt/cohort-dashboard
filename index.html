@@ -98,6 +98,8 @@ nav.tabs button.active{color:#eaf6ff;background:var(--panel2);border-color:var(-
 .view-head h2{font-size:16px}.view-head .desc{color:var(--muted);font-size:12px}
 .toggle{margin-left:auto;display:flex;gap:6px;align-items:center;color:var(--muted);font-size:12px}
 .toggle input{accent-color:var(--cyan)}
+.tipbox{position:fixed;z-index:200;max-width:330px;background:#0f1930;border:1px solid var(--cyan-line);border-radius:9px;padding:9px 11px;font-size:11.5px;line-height:1.5;color:#c9d4ea;box-shadow:0 10px 30px rgba(0,0,0,.55);pointer-events:none;display:none}
+.tipbox b{color:#eaf6ff}.tipbox i{color:var(--muted)}
 .stepc{display:flex;flex-direction:column;align-items:flex-end;line-height:1.25;cursor:help}
 .stepc .pct{font-weight:500;color:#eaf6ff}
 .stepc .sub{font-size:10px;color:var(--faint)}
@@ -205,11 +207,11 @@ tbody tr:hover .fz{background:#111c34}
 </div>
 
 <nav class="tabs" id="tabbar"></nav>
-<div class="legendbar" id="legendBar"><span><b>Bold</b> = actual</span><span class="lg-set">Amber italic</span><span style="margin-left:-12px">= still settling (charge date not passed for all, or payment retries open)</span><span class="lg-proj">Grey italic</span><span style="margin-left:-12px">= projected (scenario benchmark)</span><span><b>Converted</b> / <b>1st renewal</b> = paid \u00f7 reached that charge date (factual); muted = fewer than 10 so far</span><span><b>rt</b> = in payment retry</span><span>Hover any number for details</span></div>
+<div class="legendbar" id="legendBar"><span><b>Bold</b> = actual</span><span class="lg-set">Amber italic</span><span style="margin-left:-12px">= still settling (charge date not passed for all, or payment retries open)</span><span class="lg-proj">Grey italic</span><span style="margin-left:-12px">= projected (scenario benchmark)</span><span><b>T2P</b> (trial-to-paid, day 7) / <b>M1</b> (first 4-week renewal, day 35): e.g. <b>50%</b> \u00b7 <span style="color:var(--faint)">181 of 300 reached (60%)</span> = 50% of the 181 customers who reached that charge date paid; <span class="rt">58 rt</span> = still in payment retry. Muted % = fewer than 10 so far. Hover any cell for detail.</span><span><b>rt</b> = in payment retry</span><span><b>pCVR</b> = paying customers \u00f7 link clicks</span><span>Hover any number for details</span></div>
 
 <section class="view" data-view="monthly"><div class="view-head"><h2>Monthly cohorts</h2><span class="desc">All plans · by Created (UTC) month · purchases split by plan family</span></div><div class="chartcard" id="rateChartCard"></div><div class="tablecard"><table id="tbl-monthly"></table></div></section>
 <section class="view" data-view="weekly"><div class="view-head"><h2>Weekly cohorts</h2><span class="desc">Mon–Sun · current incomplete week shown and flagged OPEN</span></div><div class="chartcard" id="rateChartCardWeekly"></div><div class="tablecard"><table id="tbl-weekly"></table></div><div class="chartcard" id="cpaTrendCard"></div></section>
-<section class="view" data-view="retTrial"><div class="view-head"><h2>Trial + 4wk retention</h2><span class="desc">Converted = first paid period (~day 7); M1…M12 = subsequent 4-week periods · no spend/CPA · open cohort included</span></div><div class="tablecard"><table id="tbl-retTrial"></table></div></section>
+<section class="view" data-view="retTrial"><div class="view-head"><h2>Trial + 4wk retention</h2><span class="desc">T2P = trial-to-paid, first full-price charge (day 7); M1…M12 = following 4-week renewals (M1 = day 35) · no spend/CPA · open cohort included</span></div><div class="tablecard"><table id="tbl-retTrial"></table></div></section>
 <section class="view" data-view="retMonthly"><div class="view-head"><h2>4wk retention</h2><span class="desc">Direct 4-week (intro+4wk) starters · M1…M12 · no spend/CPA · open cohort included</span></div><div class="tablecard"><table id="tbl-retMonthly"></table></div></section>
 <section class="view" data-view="retQuarterly"><div class="view-head"><h2>12wk retention</h2><span class="desc">12-week (intro+12wk) starters · M3/M6/M9/M12 · no spend/CPA · open cohort included</span></div><div class="tablecard"><table id="tbl-retQuarterly"></table></div></section>
 <section class="view" data-view="byCampaign"><div class="view-head"><h2>Total — by campaign</h2><span class="desc">utm_campaign · Meta spend joined · pick a week to compare campaigns side by side, or a campaign + "by week" to see its trend</span></div>
@@ -236,7 +238,7 @@ tbody tr:hover .fz{background:#111c34}
 <section class="view" data-view="audit"><div class="view-head"><h2>Audit</h2><span class="desc">Per-week reconciliation · no customer-level PII</span></div><div class="tablecard"><table id="tbl-audit"></table></div></section>
 <section class="view" data-view="methodology"><div class="doc" id="docMethodology"></div></section>
 
-<div class="foot">Built 2026-10-02 14:53 UTC · authenticated · data loaded from a protected backend</div>
+<div class="foot">Built 2026-10-02 16:23 UTC · authenticated · data loaded from a protected backend</div>
 </div>
 <script>
 /* Cohort revenue model — compute engine v3 (spec-aligned). Pure functions, no DOM. */
@@ -459,6 +461,7 @@ tbody tr:hover .fz{background:#111c34}
     const aliases=cfg.metaAliases||{};
     const spend=buildSpend(raw.meta, aliases, toCur, warn);
     const adSpend=buildAdSpend(raw.metaAds, toCur);
+    if(countrySource && spend.hasSpend && !spend.hasCountry) warn('meta_no_country','The Meta export has no Country column, so Spend / CPA / ROAS are hidden when a country filter is on. Re-export Meta with Breakdown \u2192 Country.');
     if(!hasPayments) warn('no_payments','No payments export loaded — realized revenue uses customer Total Spend (net of refunds) as a proxy; transaction-level reconciliation unavailable.');
     else {
       const tsNet=elig.reduce((s,c)=>s+c.totalSpend*tsRate,0);
@@ -485,7 +488,7 @@ tbody tr:hover .fz{background:#111c34}
     // Meta spend can only be split by country if the Meta export has a Country column; otherwise blank it while filtering
     if(countryOn){
       if(spend.hasCountry){ const sp2=buildSpend(raw.meta, aliases, toCur, warn, selectedCountries); Object.assign(spend, sp2); }
-      else { ['byWeek','byMonth','byCampaign','byCampaignWeek','statCampaign','statCampaignWeek'].forEach(k=>spend[k]={}); spend.total=0; spend.cpm=null; spend.cpc=null; spend.ctr=null; spend.countryBlanked=true; }
+      else { ['byWeek','byMonth','byCampaign','byCampaignWeek','statCampaign','statCampaignWeek','statWeek','statMonth'].forEach(k=>spend[k]={}); spend.total=0; spend.cpm=null; spend.cpc=null; spend.ctr=null; spend.countryBlanked=true; }
       if(adSpend.hasCountry){ Object.assign(adSpend, buildAdSpend(raw.metaAds, toCur, selectedCountries)); }
       // billing country (customers) vs ad-delivery country (Meta): customers whose campaign had no spend in their country
       if(spend.hasCountry){ const md=parseCSV(raw.meta,{}); const cc=md.header.find(x=>/^country$/i.test(x.trim()));
@@ -516,7 +519,7 @@ tbody tr:hover .fz{background:#111c34}
   function addStat(o,k,sp,imp,clk){ const x=o[k]||(o[k]={spend:0,imp:0,clk:0}); x.spend+=sp; x.imp+=imp; x.clk+=clk; }
   function addStatW(o,k,w,sp,imp,clk){ const m=o[k]||(o[k]={}); addStat(m,w,sp,imp,clk); }
   function buildSpend(metaRaw, aliases, toCur, warn, countries){
-    const out={mode:'none',total:0,clicks:0,impressions:0,byWeek:{},byMonth:{},byCampaign:{},byCampaignWeek:{},statCampaign:{},statCampaignWeek:{},
+    const out={mode:'none',total:0,clicks:0,impressions:0,byWeek:{},byMonth:{},byCampaign:{},byCampaignWeek:{},statCampaign:{},statCampaignWeek:{},statWeek:{},statMonth:{},
       hasSpend:false,unmatched:[],aliasApplied:[],currency:'USD',ctr:null,cpc:null,cpm:null};
     if(!metaRaw||!String(metaRaw).trim()) return out;
     const md=parseCSV(metaRaw,{}); const cols=md.header;
@@ -537,7 +540,7 @@ tbody tr:hover .fz{background:#111c34}
       const sp=toCur(num(r[cSpend]),'usd'); const imp=num(r[cImp]); const clk=rowClicks(r,cClick,cCtr,cCpc,cImp,cSpend);
       out.total+=sp; out.clicks+=clk; out.impressions+=imp;
       out.byCampaign[camp]=(out.byCampaign[camp]||0)+sp; addStat(out.statCampaign,camp,sp,imp,clk);
-      if(s!=null){ const w=weekStart(s),m=monthStart(s); out.byWeek[w]=(out.byWeek[w]||0)+sp; out.byMonth[m]=(out.byMonth[m]||0)+sp;
+      if(s!=null){ const w=weekStart(s),m=monthStart(s); out.byWeek[w]=(out.byWeek[w]||0)+sp; out.byMonth[m]=(out.byMonth[m]||0)+sp; addStat(out.statWeek,w,sp,imp,clk); addStat(out.statMonth,m,sp,imp,clk);
         (out.byCampaignWeek[camp]=out.byCampaignWeek[camp]||{}); out.byCampaignWeek[camp][w]=(out.byCampaignWeek[camp][w]||0)+sp; addStatW(out.statCampaignWeek,camp,w,sp,imp,clk); } });
     out.hasSpend=md.rows.length>0; out.mode=out.hasSpend?(daily?'daily':'window'):'none';
     out.ctr = out.impressions&&out.clicks? out.clicks/out.impressions : null;
@@ -720,7 +723,10 @@ tbody tr:hover .fz{background:#111c34}
       roasToDatePct: spend>0? net/spend*100 : null,
       roasPct:{}, roasFactual:{},
       obsLTV: New? net/New : 0 };
-    DISPLAY_MS.forEach(m=>{ const cum=net+members.reduce((s,c)=>s+futureValue(c,ctx.asOf,m,ctx.haircutMult,sv(c)),0);
+    // ROAS k mo: net revenue each customer paid within k months of signing up, plus projected charges in that window.
+    // (Previously used all revenue to date, which leaked charges after the window into early months.)
+    const within=(c,days)=>{ if(!c.hasPay) return c.revNet; let v=0; c.payments.forEach(p=>{ if(p.created!=null && (p.created-c.created)/DAY<=days) v+=p.net; }); return v; };
+    DISPLAY_MS.forEach(m=>{ const cum=members.reduce((s,c)=>s+within(c,m*MONTH_DAYS)+futureValue(c,ctx.asOf,m,ctx.haircutMult,sv(c)),0);
       row.roasPct['M'+m]=spend>0?cum/spend*100:null;
       row.roasFactual['M'+m]= cohortEnd!=null && ctx.asOf>=cohortEnd+m*MONTH_DAYS*DAY; });
     row.predLTV=Math.max(row.obsLTV, (function(){ if(!New) return 0; let v=0;
@@ -739,8 +745,8 @@ tbody tr:hover .fz{background:#111c34}
       due2:d2.length, settled2:s2.length, conv2:s2.filter(c=>c.netPaidCount>=3).length,
       retrying1:r1.length, retryEst1:retryEst(r1,ctx), retrying2:r2.length, retryEst2:retryEst(r2,ctx)};
     // factual step rates for the table: paid / reached that charge date (never scenario-dependent)
-    row.step1={pct:d1.length?c1/d1.length*100:null, paid:c1, due:d1.length, retrying:r1.length, est:row.mat.retryEst1};
-    row.step2={pct:d2.length?c2/d2.length*100:null, paid:c2, due:d2.length, retrying:r2.length, est:row.mat.retryEst2};
+    row.step1={pct:d1.length?c1/d1.length*100:null, paid:c1, due:d1.length, retrying:r1.length, est:row.mat.retryEst1, all:New};
+    row.step2={pct:d2.length?c2/d2.length*100:null, paid:c2, due:d2.length, retrying:r2.length, est:row.mat.retryEst2, all:New};
     return row;
   }
 
@@ -752,8 +758,9 @@ tbody tr:hover .fz{background:#111c34}
       const label=mode==='weekly'?weekLabelClamped(k,ctx.startMs):monthLabel(k);
       const cohortEnd=mode==='weekly'?k+7*DAY:monthEndExcl(k);
       const spend=mode==='weekly'?(ctx.spend.byWeek[k]||0):(ctx.spend.byMonth[k]||0);
+      const cstat=mode==='weekly'?(ctx.spend.statWeek[k]||null):(ctx.spend.statMonth[k]||null);
       const row=metricRow(label,mem,ctx,cfg,spend,cohortEnd);
-      row.cohortStart=k; row.open=firstChargeOpen(mem, ctx.asOf);
+      row.cohortStart=k; row.open=firstChargeOpen(mem, ctx.asOf); attachStats(row,cstat);
       // age-adjusted: each rate only counts customers who have reached that step's charge date
       const dueC=(c,r)=>c.starter && (ctx.asOf-c.subCreated)/DAY >= chargeDay(c.starter,r);
       const d1=mem.filter(c=>dueC(c,1)), d2=mem.filter(c=>dueC(c,2));
@@ -793,7 +800,7 @@ tbody tr:hover .fz{background:#111c34}
   }
 
   function attachStats(row,stat){ row.impressions=stat?stat.imp:null; row.clicks=stat?stat.clk:null;
-    row.ctr=(stat&&stat.imp)?stat.clk/stat.imp:null; row.cpc=(stat&&stat.clk)?stat.spend/stat.clk:null; row.cpm=(stat&&stat.imp)?stat.spend/stat.imp*1000:null; }
+    row.ctr=(stat&&stat.imp)?stat.clk/stat.imp:null; row.cpc=(stat&&stat.clk)?stat.spend/stat.clk:null; row.cpm=(stat&&stat.imp)?stat.spend/stat.imp*1000:null; row.pcvr=(stat&&stat.clk&&row.New!=null)?row.New/stat.clk:null; }
   function adNameBreakdown(ctx, cfg){
     const g={};
     ctx.filtered.forEach(c=>{ const raw=c.utm_term||'(none)'; const name=raw.replace(/_(\d{6,})$/,'')||'(none)';
@@ -971,16 +978,18 @@ function wilson(k,n){if(!n)return null;var z=1.2816,p=k/n,d=1+z*z/n,c=(p+z*z/(2*
 function rangeTxt(k,n){var w=wilson(k,n);return w?('likely '+(w[0]*100).toFixed(0)+'\u2013'+(w[1]*100).toFixed(0)+'%'):'';}
 function retryTxt(e){return e&&e.n?(' ~'+Math.round(e.exp)+' likely to pay (range '+e.lo+'\u2013'+e.hi+'), based on days in retry and decline type.'):'';}
 function stepCell(st,label){ if(!st||st.due===0||st.pct==null) return '<span class="na">\u2014</span>';
- var low=st.due<10; var r=rangeTxt(st.paid,st.due);
- var tip=label+': '+st.paid+' of '+st.due+' customers who reached this charge date have paid ('+r+')'
-  +(st.retrying?('. '+st.retrying+' still in payment retry \u2014'+retryTxt(st.est)):'')
-  +(low?'. Small sample \u2014 one or two customers move this a lot.':'');
- return '<div class="stepc'+(low?' low':'')+'" title="'+esc(tip)+'"><span class="pct">'+st.pct.toFixed(0)+'%</span>'
-  +'<span class="sub">'+st.paid+' of '+st.due+' due'+(st.retrying?' \u00b7 '+st.retrying+' rt':'')+'</span></div>';}
+ var low=st.due<10;
+ var tip='<b>'+label+' '+st.pct.toFixed(0)+'%</b>'
+  +'<br>'+st.paid+' paid of '+st.due+' who reached this charge date'+(st.all?(' ('+st.due+' of '+st.all+' customers in this row have reached it)'):'')+'.'
+  +'<br>'+rangeTxt(st.paid,st.due)+' given this sample size.'
+  +(st.retrying?('<br><b>'+st.retrying+' in payment retry (rt)</b> \u2014 their charge failed and Stripe keeps retrying;'+retryTxt(st.est)):'')
+  +(low?'<br><i>Small sample \u2014 one or two customers move this a lot.</i>':'');
+ return '<div class="stepc'+(low?' low':'')+'" data-tip="'+esc(tip)+'"><span class="pct">'+st.pct.toFixed(0)+'%</span>'
+  +'<span class="sub">'+(st.all?(st.due+' of '+st.all+' reached ('+(st.due/st.all*100).toFixed(0)+'%)'):(st.due+' reached'))+(st.retrying?' \u00b7 '+st.retrying+' rt':'')+'</span></div>';}
 function predLtvCell(r){var v=(r.predLTV==null?'\u2014':'$'+r.predLTV.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}));return '<span class="proj">'+v+'</span>';}
 function matCell(r){ if(!r.predLTV) return '<span class="na">\u2014</span>';
  var real=Math.min(1,(r.obsLTV||0)/r.predLTV);
- return '<div class="matr" title="Collected revenue as a share of Pred LTV (Obs \u00f7 Pred). Pred LTV uses the '+(SCEN_LABELS[scenario]||scenario)+' benchmark for months not observed yet, so this % shifts when you change scenario.">'+(real*100).toFixed(0)+'% realized</div>';}
+ return '<div class="matr" data-tip="Collected revenue as a share of Pred LTV (Obs \u00f7 Pred). Pred LTV uses the '+(SCEN_LABELS[scenario]||scenario)+' benchmark for months not observed yet, so this % shifts when you change scenario.">'+(real*100).toFixed(0)+'% realized</div>';}
 
 var MS=[1,2,3,6,9,12];
 function famCols(){return result.families.filter(function(f){return f.key!=='annual'||result.meta.familyCounts.annual;});}
@@ -990,7 +999,7 @@ function cohortTable(id,rows,firstHead,showSplit,showLTV,extra){
  var head='<thead><tr><th class="l fz c1">'+firstHead+'</th>'
   +(extra.week?'<th class="l">Week</th>':'')+(extra.adId?'<th class="l">Ad ID</th>':'')+(extra.campaign?'<th class="l">Campaign</th>':'');
  if(showSplit){ fams.forEach(function(f,i){head+='<th'+(i===0?' class="grp"':'')+'>'+f.shortLabel+'</th>';}); head+='<th class="grp">Total</th>'; }
- head+='<th class="grp">Spend</th><th>CPA</th>'+(extra.useBase?'<th title="Link click-through rate (link clicks \u00f7 impressions)">CTR</th><th title="Cost per link click">CPC</th><th title="Cost per 1,000 impressions">CPM</th>':'')+'<th class="grp" title="Paid the first full charge, out of customers who reached that date. Factual \u2014 does not depend on scenario.">Converted</th><th title="Paid the next renewal, out of customers who reached that date. Factual.">1st renewal</th>'+'<th class="grp">D0 Rev</th><th>Net to date</th><th>Refunds</th><th>Disputes</th><th class="grp">D0 ROAS</th><th>ROAS to date</th>'
+ head+='<th class="grp">Spend</th><th>CPA</th><th title="pCVR = paying customers \u00f7 Meta link clicks (click-to-purchase conversion)">pCVR</th>'+(extra.useBase?'<th title="Link click-through rate (link clicks \u00f7 impressions)">CTR</th><th title="Cost per link click">CPC</th><th title="Cost per 1,000 impressions">CPM</th>':'')+'<th class="grp" title="T2P (trial-to-paid): paid the first full-price charge, out of customers who reached that date. Intro plans count at their first full-price renewal. Factual \u2014 does not depend on scenario.">T2P</th><th title="M1: paid the first 4-week renewal after T2P (day 35 for the 1-week trial plan), out of customers who reached that date. Same charge as M1 in the retention tabs. Factual.">M1</th>'+'<th class="grp">D0 Rev</th><th>Net to date</th><th>Refunds</th><th>Disputes</th><th class="grp">D0 ROAS</th><th>ROAS to date</th>'
   +MS.map(function(m){return '<th'+(m===1?' class="grp"':'')+' title="Cumulative net revenue through '+m+' month'+(m>1?'s':'')+' after signup \u00f7 spend">ROAS '+m+' mo</th>';}).join('')
   +(showLTV?'<th class="grp">Obs LTV</th><th title="'+predTip()+'">Pred LTV<span class="thsub">'+scenLab()+'</span></th><th title="Share of Pred LTV already collected">Realized</th>':'')+'</tr></thead>';
  var body='<tbody>'+rows.map(function(r){
@@ -1003,9 +1012,9 @@ function cohortTable(id,rows,firstHead,showSplit,showLTV,extra){
   if(showSplit){ fams.forEach(function(f,i){var sp=r.split[f.key]||{count:0,share:0};
     s+='<td'+(i===0?' class="grp"':'')+'>'+(sp.count?'<div class="split"><span class="n">'+sp.count+'</span><span class="s">'+(sp.share*100).toFixed(0)+'%</span></div>':'<span class="na">—</span>')+'</td>';});
     s+='<td class="grp actual">'+intg(r.New)+'</td>'; }
-  s+='<td class="grp">'+(r.spend>0?money0(r.spend):'<span class="na">—</span>')+'</td><td>'+(r.cpa!=null?money(r.cpa):'<span class="na">—</span>')+'</td>'
+  s+='<td class="grp">'+(r.spend>0?money0(r.spend):'<span class="na">—</span>')+'</td><td>'+(r.cpa!=null?money(r.cpa):'<span class="na">—</span>')+'</td><td>'+(r.pcvr!=null?(r.pcvr*100).toFixed(2)+'%':'<span class="na">—</span>')+'</td>'
    +(extra.useBase?'<td>'+(r.ctr!=null?(r.ctr*100).toFixed(2)+'%':'<span class="na">—</span>')+'</td><td>'+(r.cpc!=null?money(r.cpc):'<span class="na">—</span>')+'</td><td>'+(r.cpm!=null?money(r.cpm):'<span class="na">—</span>')+'</td>':'')
-   +'<td class="grp">'+stepCell(r.step1,'Converted')+'</td><td>'+stepCell(r.step2,'1st renewal')+'</td>'
+   +'<td class="grp">'+stepCell(r.step1,'T2P')+'</td><td>'+stepCell(r.step2,'M1')+'</td>'
    +'<td class="grp">'+money(r.d0,"actual")+'</td><td>'+money(r.net,"actual")+'</td>'
    +'<td>'+(r.refunds>0?money(-r.refunds,"neg"):money(0))+'</td><td>'+(r.disputes>0?money(-r.disputes,"neg"):money(0))+'</td>'
    +'<td class="grp">'+pct(r.d0RoasPct,true)+'</td><td>'+pct(r.roasToDatePct,true)+'</td>'
@@ -1024,9 +1033,9 @@ function retCell(c){if(!c)return '<div class="rc blank">—</div>';var st=c.stat
  else if(st==='partial'){ cnt=c.count+' of '+c.aged+' due'+(c.retrying?' <span class="rt">+'+c.retrying+' rt</span>':'');
    tip='Cohort still reaching this charge date: '+c.count+' paid out of '+c.aged+' whose date has passed ('+rangeTxt(c.count,c.aged)+'); '+(c.notDue||0)+' not due yet.'+(c.retrying?(' '+c.retrying+' still in payment retry \u2014'+retryTxt(c.retryEst)):''); }
  else { cnt=String(c.count); }
- return '<div class="rc '+cls+'"'+(tip?' title="'+tip+'"':'')+'><span class="pct">'+c.pct.toFixed(0)+'%</span><span class="cnt">'+cnt+'</span></div>';}
+ return '<div class="rc '+cls+'"'+(tip?' data-tip="'+esc(tip)+'"':'')+'><span class="pct">'+c.pct.toFixed(0)+'%</span><span class="cnt">'+cnt+'</span></div>';}
 function retTable(id,tab){var t=document.getElementById(id),ms=tab.milestones;
- var head='<thead><tr><th class="l fz c1">Cohort</th><th class="grp">New</th>'+ms.map(function(l,i){return '<th'+(i===0?' class="grp"':'')+'>'+l+'</th>';}).join('')+'<th class="grp">Obs LTV</th><th title="'+predTip()+'">Pred LTV<span class="thsub">'+scenLab()+'</span></th></tr></thead>';
+ var head='<thead><tr><th class="l fz c1">Cohort</th><th class="grp">New</th>'+ms.map(function(l,i){return '<th'+(i===0?' class="grp"':'')+(l==='Converted'?' title="T2P (trial-to-paid): paid the first full-price charge on day 7"':'')+'>'+(l==='Converted'?'T2P':l)+'</th>';}).join('')+'<th class="grp">Obs LTV</th><th title="'+predTip()+'">Pred LTV<span class="thsub">'+scenLab()+'</span></th></tr></thead>';
  var body=tab.rows.length?('<tbody>'+tab.rows.map(function(r){return '<tr><td class="l fz c1"><span class="coh">'+r.label+'</span>'+'</td><td class="grp actual">'+intg(r.New)+'</td>'
   +ms.map(function(l,i){return '<td'+(i===0?' class="grp"':'')+'>'+retCell(r.cells[l])+'</td>';}).join('')
   +'<td class="grp">'+money(r.obsLTV,"actual")+'</td><td>'+money(r.predLTV,"proj")+'</td></tr>';}).join('')+'</tbody>')
@@ -1258,8 +1267,17 @@ function buildScenarioBar(){var bar=document.getElementById("scenarioBar");var s
   Array.prototype.forEach.call(bar.querySelectorAll('.seg button'),function(x){x.classList.toggle('active',x===b);});
   var cap=document.getElementById('scenarioCap');if(cap)cap.textContent=SCEN_CAP[scenario]||'';renderAll();});}
 
+function wireTips(){ var box=document.createElement('div'); box.className='tipbox'; document.body.appendChild(box);
+ document.addEventListener('mouseover',function(e){ var t=e.target.closest&&e.target.closest('[data-tip]'); if(!t)return;
+  box.innerHTML=t.getAttribute('data-tip'); box.style.display='block';
+  var r=t.getBoundingClientRect(), bw=box.offsetWidth, bh=box.offsetHeight;
+  var x=Math.min(window.innerWidth-bw-10,Math.max(8,r.left+r.width/2-bw/2));
+  var y=(r.top-bh-8>8)?(r.top-bh-8):(r.bottom+8);
+  box.style.left=x+'px'; box.style.top=y+'px'; });
+ document.addEventListener('mouseout',function(e){ var t=e.target.closest&&e.target.closest('[data-tip]'); if(t) box.style.display='none'; });
+ document.addEventListener('scroll',function(){ box.style.display='none'; },true); }
 function __boot(){ if(!window.__HOSTED__) loadStored(); else { var up=document.querySelector('details.uploader'); if(up) up.style.display='none'; }
- buildScenarioBar();buildTabs();buildUploader();wireCamp();wireCtry();wireActions();storeState();renderAll();campLabel();ctryLabel(); }
+ wireTips();buildScenarioBar();buildTabs();buildUploader();wireCamp();wireCtry();wireActions();storeState();renderAll();campLabel();ctryLabel(); }
 window.__boot=__boot;
 if(!window.__HOSTED__){ __boot(); }   // self-contained build boots immediately; hosted build boots after auth+fetch
 })();
