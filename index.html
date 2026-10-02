@@ -98,6 +98,11 @@ nav.tabs button.active{color:#eaf6ff;background:var(--panel2);border-color:var(-
 .view-head h2{font-size:16px}.view-head .desc{color:var(--muted);font-size:12px}
 .toggle{margin-left:auto;display:flex;gap:6px;align-items:center;color:var(--muted);font-size:12px}
 .toggle input{accent-color:var(--cyan)}
+.stepc{display:flex;flex-direction:column;align-items:flex-end;line-height:1.25;cursor:help}
+.stepc .pct{font-weight:500;color:#eaf6ff}
+.stepc .sub{font-size:10px;color:var(--faint)}
+.stepc.low .pct{color:var(--muted);font-weight:400}
+.matr{color:#9fb3d9;font-size:11px;cursor:help;text-align:right}
 .smalln{display:inline-block;margin-left:6px;font-size:9px;color:#a9b8d6;background:#1a2440;border:1px solid #2a3a5e;border-radius:5px;padding:1px 5px;vertical-align:middle;font-weight:500;cursor:help}
 .mat{font-size:10.5px;color:var(--muted);min-width:150px;cursor:help;line-height:1.35}
 .matl{display:flex;align-items:center;gap:6px;justify-content:space-between}
@@ -200,7 +205,7 @@ tbody tr:hover .fz{background:#111c34}
 </div>
 
 <nav class="tabs" id="tabbar"></nav>
-<div class="legendbar" id="legendBar"><span><b>Bold</b> = actual</span><span class="lg-set">Amber italic</span><span style="margin-left:-12px">= still settling (charge date not passed for all, or payment retries open)</span><span class="lg-proj">Grey italic</span><span style="margin-left:-12px">= projected (scenario benchmark)</span><span><span class="smalln" style="margin-left:0">small n</span> = fewer than 10 customers with a final outcome</span><span><b>rt</b> = in payment retry</span><span>Hover any number for details</span></div>
+<div class="legendbar" id="legendBar"><span><b>Bold</b> = actual</span><span class="lg-set">Amber italic</span><span style="margin-left:-12px">= still settling (charge date not passed for all, or payment retries open)</span><span class="lg-proj">Grey italic</span><span style="margin-left:-12px">= projected (scenario benchmark)</span><span><b>Converted</b> / <b>1st renewal</b> = paid \u00f7 reached that charge date (factual); muted = fewer than 10 so far</span><span><b>rt</b> = in payment retry</span><span>Hover any number for details</span></div>
 
 <section class="view" data-view="monthly"><div class="view-head"><h2>Monthly cohorts</h2><span class="desc">All plans · by Created (UTC) month · purchases split by plan family</span></div><div class="chartcard" id="rateChartCard"></div><div class="tablecard"><table id="tbl-monthly"></table></div></section>
 <section class="view" data-view="weekly"><div class="view-head"><h2>Weekly cohorts</h2><span class="desc">Mon–Sun · current incomplete week shown and flagged OPEN</span></div><div class="chartcard" id="rateChartCardWeekly"></div><div class="tablecard"><table id="tbl-weekly"></table></div><div class="chartcard" id="cpaTrendCard"></div></section>
@@ -231,7 +236,7 @@ tbody tr:hover .fz{background:#111c34}
 <section class="view" data-view="audit"><div class="view-head"><h2>Audit</h2><span class="desc">Per-week reconciliation · no customer-level PII</span></div><div class="tablecard"><table id="tbl-audit"></table></div></section>
 <section class="view" data-view="methodology"><div class="doc" id="docMethodology"></div></section>
 
-<div class="foot">Built 2026-10-02 12:00 UTC · authenticated · data loaded from a protected backend</div>
+<div class="foot">Built 2026-10-02 14:49 UTC · authenticated · data loaded from a protected backend</div>
 </div>
 <script>
 /* Cohort revenue model — compute engine v3 (spec-aligned). Pure functions, no DOM. */
@@ -728,10 +733,14 @@ tbody tr:hover .fz{background:#111c34}
     const due=(c,r)=>c.starter && (ctx.asOf-c.subCreated)/DAY >= chargeDay(c.starter,r);
     const d1=members.filter(c=>due(c,1)), d2=members.filter(c=>due(c,2));
     const s1=d1.filter(c=>c.netPaidCount>=2||!pd(c)), s2=d2.filter(c=>c.netPaidCount>=3||!pd(c));
-    const r1=d1.filter(c=>c.netPaidCount<2&&pd(c));
+    const r1=d1.filter(c=>c.netPaidCount<2&&pd(c)), r2=d2.filter(c=>c.netPaidCount<3&&pd(c));
+    const c1=d1.filter(c=>c.netPaidCount>=2).length, c2=d2.filter(c=>c.netPaidCount>=3).length;
     row.mat={New:New, due1:d1.length, settled1:s1.length, conv1:s1.filter(c=>c.netPaidCount>=2).length,
       due2:d2.length, settled2:s2.length, conv2:s2.filter(c=>c.netPaidCount>=3).length,
-      retrying1:r1.length, retryEst1:retryEst(r1,ctx)};
+      retrying1:r1.length, retryEst1:retryEst(r1,ctx), retrying2:r2.length, retryEst2:retryEst(r2,ctx)};
+    // factual step rates for the table: paid / reached that charge date (never scenario-dependent)
+    row.step1={pct:d1.length?c1/d1.length*100:null, paid:c1, due:d1.length, retrying:r1.length, est:row.mat.retryEst1};
+    row.step2={pct:d2.length?c2/d2.length*100:null, paid:c2, due:d2.length, retrying:r2.length, est:row.mat.retryEst2};
     return row;
   }
 
@@ -961,18 +970,17 @@ function realTip(){return 'Already-collected revenue as a share of Pred LTV (Obs
 function wilson(k,n){if(!n)return null;var z=1.2816,p=k/n,d=1+z*z/n,c=(p+z*z/(2*n))/d,h=z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n))/d;return [Math.max(0,c-h),Math.min(1,c+h)];}
 function rangeTxt(k,n){var w=wilson(k,n);return w?('likely '+(w[0]*100).toFixed(0)+'\u2013'+(w[1]*100).toFixed(0)+'%'):'';}
 function retryTxt(e){return e&&e.n?(' ~'+Math.round(e.exp)+' likely to pay (range '+e.lo+'\u2013'+e.hi+'), based on days in retry and decline type.'):'';}
-function smallBadge(n){return (n!=null&&n<10)?' <span class="smalln" title="Fewer than 10 customers have a final conversion outcome in this row, so its rates and projections can swing a lot with one or two customers.">small n</span>':'';}
+function stepCell(st,label){ if(!st||st.due===0||st.pct==null) return '<span class="na">\u2014</span>';
+ var low=st.due<10; var r=rangeTxt(st.paid,st.due);
+ var tip=label+': '+st.paid+' of '+st.due+' customers who reached this charge date have paid ('+r+')'
+  +(st.retrying?('. '+st.retrying+' still in payment retry \u2014'+retryTxt(st.est)):'')
+  +(low?'. Small sample \u2014 one or two customers move this a lot.':'');
+ return '<div class="stepc'+(low?' low':'')+'" title="'+esc(tip)+'"><span class="pct">'+st.pct.toFixed(0)+'%</span>'
+  +'<span class="sub">'+st.paid+' of '+st.due+' due'+(st.retrying?' \u00b7 '+st.retrying+' rt':'')+'</span></div>';}
 function predLtvCell(r){var v=(r.predLTV==null?'\u2014':'$'+r.predLTV.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}));return '<span class="proj">'+v+'</span>';}
-function matCell(r){var m=r.mat;if(!m||!m.New)return '<span class="na">\u2014</span>';
- var real=(r.predLTV>0?Math.min(1,(r.obsLTV||0)/r.predLTV):0);var w1=Math.round(m.settled1/m.New*100),w2=Math.round(m.settled2/m.New*100);
- var tip='Conversion (or 1st renewal for no-trial plans) is final for '+m.settled1+' of '+m.New+' customers'
-  +(m.settled1?(': '+m.conv1+' converted = '+(m.conv1/m.settled1*100).toFixed(0)+'%, '+rangeTxt(m.conv1,m.settled1)):'')+'.'
-  +(m.retrying1?(' '+m.retrying1+' more still in payment retry \u2014'+retryTxt(m.retryEst1)):'')
-  +' Next renewal reached and final for '+m.settled2+' of '+m.New+'.'
-  +' '+(real*100).toFixed(0)+'% of Pred LTV is already collected revenue (depends on the selected scenario).';
- return '<div class="mat" title="'+esc(tip)+'"><div class="matl"><span>Conv '+m.settled1+'/'+m.New+'</span><span class="bar"><i style="width:'+w1+'%"></i></span></div>'
-  +'<div class="matl"><span>M1 '+m.settled2+'/'+m.New+'</span><span class="bar"><i style="width:'+w2+'%"></i></span></div>'
-  +'<div class="matr">'+(real*100).toFixed(0)+'% realized</div></div>';}
+function matCell(r){ if(!r.predLTV) return '<span class="na">\u2014</span>';
+ var real=Math.min(1,(r.obsLTV||0)/r.predLTV);
+ return '<div class="matr" title="Collected revenue as a share of Pred LTV (Obs \u00f7 Pred). Pred LTV uses the '+(SCEN_LABELS[scenario]||scenario)+' benchmark for months not observed yet, so this % shifts when you change scenario.">'+(real*100).toFixed(0)+'% realized</div>';}
 
 var MS=[1,2,3,6,9,12];
 function famCols(){return result.families.filter(function(f){return f.key!=='annual'||result.meta.familyCounts.annual;});}
@@ -982,13 +990,13 @@ function cohortTable(id,rows,firstHead,showSplit,showLTV,extra){
  var head='<thead><tr><th class="l fz c1">'+firstHead+'</th>'
   +(extra.week?'<th class="l">Week</th>':'')+(extra.adId?'<th class="l">Ad ID</th>':'')+(extra.campaign?'<th class="l">Campaign</th>':'');
  if(showSplit){ fams.forEach(function(f,i){head+='<th'+(i===0?' class="grp"':'')+'>'+f.shortLabel+'</th>';}); head+='<th class="grp">Total</th>'; }
- head+='<th class="grp">Spend</th><th>CPA</th>'+(extra.useBase?'<th title="Link click-through rate (link clicks \u00f7 impressions)">CTR</th><th title="Cost per link click">CPC</th><th title="Cost per 1,000 impressions">CPM</th>':'')+'<th class="grp">D0 Rev</th><th>Net to date</th><th>Refunds</th><th>Disputes</th><th class="grp">D0 ROAS</th><th>ROAS to date</th>'
+ head+='<th class="grp">Spend</th><th>CPA</th>'+(extra.useBase?'<th title="Link click-through rate (link clicks \u00f7 impressions)">CTR</th><th title="Cost per link click">CPC</th><th title="Cost per 1,000 impressions">CPM</th>':'')+'<th class="grp" title="Paid the first full charge, out of customers who reached that date. Factual \u2014 does not depend on scenario.">Converted</th><th title="Paid the next renewal, out of customers who reached that date. Factual.">1st renewal</th>'+'<th class="grp">D0 Rev</th><th>Net to date</th><th>Refunds</th><th>Disputes</th><th class="grp">D0 ROAS</th><th>ROAS to date</th>'
   +MS.map(function(m){return '<th'+(m===1?' class="grp"':'')+' title="Cumulative net revenue through '+m+' month'+(m>1?'s':'')+' after signup \u00f7 spend">ROAS '+m+' mo</th>';}).join('')
-  +(showLTV?'<th class="grp">Obs LTV</th><th title="'+predTip()+'">Pred LTV<span class="thsub">'+scenLab()+'</span></th><th class="l" title="How much of this row\u2019s data is final">Maturity</th>':'')+'</tr></thead>';
+  +(showLTV?'<th class="grp">Obs LTV</th><th title="'+predTip()+'">Pred LTV<span class="thsub">'+scenLab()+'</span></th><th title="Share of Pred LTV already collected">Realized</th>':'')+'</tr></thead>';
  var body='<tbody>'+rows.map(function(r){
   var tag=r.open?'<span class="open-tag">OPEN</span>':'';
   var lab=extra.useBase?(r.baseLabel||r.label):r.label;
-  var s='<tr><td class="l fz c1"><span class="coh" title="'+esc(lab)+'">'+esc(lab)+'</span>'+tag+smallBadge(r.mat?r.mat.settled1:null)+'</td>'
+  var s='<tr><td class="l fz c1"><span class="coh" title="'+esc(lab)+'">'+esc(lab)+'</span>'+tag+'</td>'
    +(extra.week?'<td class="l">'+esc(r.weekLabel||'—')+'</td>':'')
    +(extra.adId?'<td class="l mono">'+esc(r.adId||'—')+'</td>':'')
    +(extra.campaign?'<td class="l camp" title="'+esc(r.campaignName)+'">'+esc(r.campaignName||'—')+'</td>':'');
@@ -997,11 +1005,12 @@ function cohortTable(id,rows,firstHead,showSplit,showLTV,extra){
     s+='<td class="grp actual">'+intg(r.New)+'</td>'; }
   s+='<td class="grp">'+(r.spend>0?money0(r.spend):'<span class="na">—</span>')+'</td><td>'+(r.cpa!=null?money(r.cpa):'<span class="na">—</span>')+'</td>'
    +(extra.useBase?'<td>'+(r.ctr!=null?(r.ctr*100).toFixed(2)+'%':'<span class="na">—</span>')+'</td><td>'+(r.cpc!=null?money(r.cpc):'<span class="na">—</span>')+'</td><td>'+(r.cpm!=null?money(r.cpm):'<span class="na">—</span>')+'</td>':'')
+   +'<td class="grp">'+stepCell(r.step1,'Converted')+'</td><td>'+stepCell(r.step2,'1st renewal')+'</td>'
    +'<td class="grp">'+money(r.d0,"actual")+'</td><td>'+money(r.net,"actual")+'</td>'
    +'<td>'+(r.refunds>0?money(-r.refunds,"neg"):money(0))+'</td><td>'+(r.disputes>0?money(-r.disputes,"neg"):money(0))+'</td>'
    +'<td class="grp">'+pct(r.d0RoasPct,true)+'</td><td>'+pct(r.roasToDatePct,true)+'</td>'
    +MS.map(function(m){return '<td'+(m===1?' class="grp"':'')+'>'+pct(r.roasPct['M'+m],r.roasFactual['M'+m])+'</td>';}).join('')
-   +(showLTV?'<td class="grp">'+money(r.obsLTV,"actual")+'</td><td>'+predLtvCell(r)+'</td><td class="l">'+matCell(r)+'</td>':'')+'</tr>';
+   +(showLTV?'<td class="grp">'+money(r.obsLTV,"actual")+'</td><td>'+predLtvCell(r)+'</td><td>'+matCell(r)+'</td>':'')+'</tr>';
   return s;}).join('')+'</tbody>';
  var t=document.getElementById(id); t.innerHTML=head+body; t.classList[extra.useBase?'add':'remove']('wrapname');
 }
@@ -1018,7 +1027,7 @@ function retCell(c){if(!c)return '<div class="rc blank">—</div>';var st=c.stat
  return '<div class="rc '+cls+'"'+(tip?' title="'+tip+'"':'')+'><span class="pct">'+c.pct.toFixed(0)+'%</span><span class="cnt">'+cnt+'</span></div>';}
 function retTable(id,tab){var t=document.getElementById(id),ms=tab.milestones;
  var head='<thead><tr><th class="l fz c1">Cohort</th><th class="grp">New</th>'+ms.map(function(l,i){return '<th'+(i===0?' class="grp"':'')+'>'+l+'</th>';}).join('')+'<th class="grp">Obs LTV</th><th title="'+predTip()+'">Pred LTV<span class="thsub">'+scenLab()+'</span></th></tr></thead>';
- var body=tab.rows.length?('<tbody>'+tab.rows.map(function(r){return '<tr><td class="l fz c1"><span class="coh">'+r.label+'</span>'+smallBadge(r.New)+'</td><td class="grp actual">'+intg(r.New)+'</td>'
+ var body=tab.rows.length?('<tbody>'+tab.rows.map(function(r){return '<tr><td class="l fz c1"><span class="coh">'+r.label+'</span>'+'</td><td class="grp actual">'+intg(r.New)+'</td>'
   +ms.map(function(l,i){return '<td'+(i===0?' class="grp"':'')+'>'+retCell(r.cells[l])+'</td>';}).join('')
   +'<td class="grp">'+money(r.obsLTV,"actual")+'</td><td>'+money(r.predLTV,"proj")+'</td></tr>';}).join('')+'</tbody>')
   :('<tbody><tr><td class="l" colspan="'+(4+ms.length)+'" style="color:var(--faint);padding:16px">No eligible starters for this plan in the current selection.</td></tr></tbody>');
