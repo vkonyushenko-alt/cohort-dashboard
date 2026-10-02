@@ -59,7 +59,7 @@ header.top{display:flex;align-items:flex-end;justify-content:space-between;gap:2
 .dq summary{cursor:pointer;list-style:none;padding:9px 13px;font-size:12px;color:var(--warn);font-weight:600}
 .dq summary::-webkit-details-marker{display:none}
 .dq ul{margin:0;padding:2px 20px 12px;color:#c9d4ea;font-size:12px}
-.toolbar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:14px}
+.toolbar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:14px;position:relative;z-index:45}
 .campfilter{position:relative}
 .campfilter>button{background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:8px 13px;cursor:pointer;font-size:12.5px;font-weight:560}
 .note-sm{color:var(--muted);font-size:11px;line-height:1.4;margin:0 0 8px}
@@ -241,7 +241,7 @@ tbody tr:hover .fz{background:#111c34}
 <section class="view" data-view="audit"><div class="view-head"><h2>Audit</h2><span class="desc">Per-week reconciliation · no customer-level PII</span></div><div class="tablecard"><table id="tbl-audit"></table></div></section>
 <section class="view" data-view="methodology"><div class="doc" id="docMethodology"></div></section>
 
-<div class="foot">Built 2026-10-02 16:58 UTC · authenticated · data loaded from a protected backend</div>
+<div class="foot">Built 2026-10-02 17:11 UTC · authenticated · data loaded from a protected backend</div>
 </div>
 <script>
 /* Cohort revenue model — compute engine v3 (spec-aligned). Pure functions, no DOM. */
@@ -1290,7 +1290,7 @@ function buildScenarioBar(){var bar=document.getElementById("scenarioBar");var s
 
 (function(){ function show(msg){ var t=document.getElementById('errToast'); if(!t){ t=document.createElement('div'); t.id='errToast'; t.className='errtoast'; document.body.appendChild(t);
   t.addEventListener('click',function(){ t.style.display='none'; }); }
-  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-02 16:58 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
+  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-02 17:11 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
  window.addEventListener('error',function(e){ show((e.message||'error')+(e.lineno?(' @'+e.lineno+':'+(e.colno||0)):'')); });
  window.addEventListener('unhandledrejection',function(e){ show('promise: '+((e.reason&&e.reason.message)||e.reason)); });
  window.__showErr=show; })();
