@@ -236,7 +236,7 @@ tbody tr:hover .fz{background:#111c34}
 <section class="view" data-view="audit"><div class="view-head"><h2>Audit</h2><span class="desc">Per-week reconciliation · no customer-level PII</span></div><div class="tablecard"><table id="tbl-audit"></table></div></section>
 <section class="view" data-view="methodology"><div class="doc" id="docMethodology"></div></section>
 
-<div class="foot">Built 2026-10-02 14:49 UTC · authenticated · data loaded from a protected backend</div>
+<div class="foot">Built 2026-10-02 14:53 UTC · authenticated · data loaded from a protected backend</div>
 </div>
 <script>
 /* Cohort revenue model — compute engine v3 (spec-aligned). Pure functions, no DOM. */
@@ -1270,13 +1270,19 @@ if(!window.__HOSTED__){ __boot(); }   // self-contained build boots immediately;
   <input id="agPass" type="password" placeholder="password" autocomplete="current-password">
   <button id="agBtn">Sign in</button>
   <div class="err" id="agErr"></div>
-  <div class="note">Access is provisioned by an administrator. No public signup.</div>
+  <div class="note">Access is provisioned by an administrator. No public signup.<br>You stay signed in while this tab is open.</div>
 </div>
 <script>
 (function(){"use strict";
   var CFG=window.APP_CONFIG||{};
   if(!window.supabase||!CFG.SUPABASE_URL||!CFG.SUPABASE_ANON_KEY){ document.getElementById("agErr").textContent="Missing Supabase config (app-config.js)."; return; }
-  var sb=window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
+  // Session is kept in sessionStorage: it survives a reload but dies with the tab.
+  // Nothing persists to localStorage, so a new tab (or a reopened browser) always asks to sign in.
+  var memStore={}, tabStore;
+  try { window.sessionStorage.setItem('__t','1'); window.sessionStorage.removeItem('__t'); tabStore=window.sessionStorage; }
+  catch(e){ tabStore={ getItem:function(k){return memStore[k]||null;}, setItem:function(k,v){memStore[k]=String(v);}, removeItem:function(k){delete memStore[k];} }; }
+  var sb=window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY,
+    { auth: { storage:tabStore, persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } });
   var gate=document.getElementById("authGate"); document.body.classList.add("locked");
   function fail(m){ document.getElementById("agErr").textContent=m||"Sign-in failed."; }
   async function loadData(){
@@ -1295,7 +1301,7 @@ if(!window.__HOSTED__){ __boot(); }   // self-contained build boots immediately;
     var so=document.createElement("button"); so.textContent="Sign out"; so.className="signout";
     so.onclick=async function(){ await sb.auth.signOut(); location.reload(); }; document.body.appendChild(so);
   }
-  async function start(){ var { data:{ session } } = await sb.auth.getSession(); if(session){ await loadData(); } }
+  async function start(){ var { data:{ session } } = await sb.auth.getSession(); if(session) await loadData(); }
   document.getElementById("agBtn").addEventListener("click", async function(){
     var email=document.getElementById("agEmail").value.trim(), pass=document.getElementById("agPass").value;
     document.getElementById("agErr").textContent="";
