@@ -238,7 +238,7 @@ tbody tr:hover .fz{background:#111c34}
 <section class="view" data-view="audit"><div class="view-head"><h2>Audit</h2><span class="desc">Per-week reconciliation · no customer-level PII</span></div><div class="tablecard"><table id="tbl-audit"></table></div></section>
 <section class="view" data-view="methodology"><div class="doc" id="docMethodology"></div></section>
 
-<div class="foot">Built 2026-10-02 16:23 UTC · authenticated · data loaded from a protected backend</div>
+<div class="foot">Built 2026-10-02 16:33 UTC · authenticated · data loaded from a protected backend</div>
 </div>
 <script>
 /* Cohort revenue model — compute engine v3 (spec-aligned). Pure functions, no DOM. */
@@ -254,6 +254,9 @@ tbody tr:hover .fz{background:#111c34}
   function parseCSV(text, opts){ opts=opts||{}; if(text==null) return {header:[],rows:[]};
     text=String(text).replace(/^\uFEFF/,''); let lines=text.split(/\r\n|\n|\r/);
     while(lines.length && lines[lines.length-1]==='') lines.pop(); if(!lines.length) return {header:[],rows:[]};
+    // a whole semicolon line wrapped in quotes (e.g. "id;Created (UTC);...") means it was stored in one cell: unwrap all lines
+    if(/^"[^"]*[;,][\s\S]*"$/.test(lines[0]) && tok(lines[0],';').length===1 && tok(lines[0],',').length===1){
+      lines=lines.map(l=>(l.length>1&&l[0]==='"'&&l[l.length-1]==='"')?l.slice(1,-1).replace(/""/g,'"'):l); }
     // Title line: Stripe exports start with a bare title ("unified_payments"). Google Sheets pads it
     // out to the full width ("unified_payments (2);;;;;"), so treat a first line whose cells are all
     // empty except the first as a title line too.
@@ -461,6 +464,10 @@ tbody tr:hover .fz{background:#111c34}
     const aliases=cfg.metaAliases||{};
     const spend=buildSpend(raw.meta, aliases, toCur, warn);
     const adSpend=buildAdSpend(raw.metaAds, toCur);
+    if(spend.hasSpend && spend.impressions>0 && (spend.clicks>spend.impressions*0.5 || (spend.clicks>0 && spend.total/spend.clicks<0.01)))
+      warn('meta_malformed','Meta click numbers look malformed (link clicks '+Math.round(spend.clicks)+' vs impressions '+Math.round(spend.impressions)+'), so CTR / CPC / pCVR are unreliable. If data comes from Google Sheets, re-import the meta tab with "Convert text to numbers, dates, and formulas" turned OFF.');
+    if(adSpend.hasData){ const ids=Object.keys(adSpend.byId); const rounded=ids.filter(x=>/0000$/.test(x)||/e\+/i.test(x)).length;
+      if(ids.length>=5 && rounded/ids.length>0.5) warn('meta_ids_rounded','Most Meta Ad IDs end in 0000 or are in scientific notation \u2014 they were likely rounded by Google Sheets, so ads can\u2019t be matched to their spend. Re-import the meta tab with "Convert text to numbers, dates, and formulas" turned OFF.'); }
     if(countrySource && spend.hasSpend && !spend.hasCountry) warn('meta_no_country','The Meta export has no Country column, so Spend / CPA / ROAS are hidden when a country filter is on. Re-export Meta with Breakdown \u2192 Country.');
     if(!hasPayments) warn('no_payments','No payments export loaded — realized revenue uses customer Total Spend (net of refunds) as a proxy; transaction-level reconciliation unavailable.');
     else {
