@@ -98,6 +98,9 @@ nav.tabs button.active{color:#eaf6ff;background:var(--panel2);border-color:var(-
 .view-head h2{font-size:16px}.view-head .desc{color:var(--muted);font-size:12px}
 .toggle{margin-left:auto;display:flex;gap:6px;align-items:center;color:var(--muted);font-size:12px}
 .toggle input{accent-color:var(--cyan)}
+.errtoast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:300;max-width:560px;background:#2a1220;border:1px solid #7a2a44;color:#ffd6e0;border-radius:10px;padding:10px 14px;font-size:12px;line-height:1.5;display:none;cursor:pointer;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.errtoast code{color:#ffb3c6;font-size:11px;word-break:break-word}
+.busy{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:250;background:#0c2836;border:1px solid var(--cyan-line);color:#c9ecf7;border-radius:20px;padding:6px 14px;font-size:12px;display:none;box-shadow:0 6px 20px rgba(0,0,0,.4)}
 .tipbox{position:fixed;z-index:200;max-width:330px;background:#0f1930;border:1px solid var(--cyan-line);border-radius:9px;padding:9px 11px;font-size:11.5px;line-height:1.5;color:#c9d4ea;box-shadow:0 10px 30px rgba(0,0,0,.55);pointer-events:none;display:none}
 .tipbox b{color:#eaf6ff}.tipbox i{color:var(--muted)}
 .stepc{display:flex;flex-direction:column;align-items:flex-end;line-height:1.25;cursor:help}
@@ -238,7 +241,7 @@ tbody tr:hover .fz{background:#111c34}
 <section class="view" data-view="audit"><div class="view-head"><h2>Audit</h2><span class="desc">Per-week reconciliation · no customer-level PII</span></div><div class="tablecard"><table id="tbl-audit"></table></div></section>
 <section class="view" data-view="methodology"><div class="doc" id="docMethodology"></div></section>
 
-<div class="foot">Built 2026-10-02 16:33 UTC · authenticated · data loaded from a protected backend</div>
+<div class="foot">Built 2026-10-02 16:58 UTC · authenticated · data loaded from a protected backend</div>
 </div>
 <script>
 /* Cohort revenue model — compute engine v3 (spec-aligned). Pure functions, no DOM. */
@@ -251,7 +254,12 @@ tbody tr:hover .fz{background:#111c34}
   function tok(line, d){ const o=[]; let c='',q=false; for(let i=0;i<line.length;i++){const ch=line[i];
     if(q){ if(ch==='"'){ if(line[i+1]==='"'){c+='"';i++;} else q=false;} else c+=ch;}
     else { if(ch==='"')q=true; else if(ch===d){o.push(c);c='';} else c+=ch;} } o.push(c); return o; }
+  const _csvCache=new Map();
   function parseCSV(text, opts){ opts=opts||{}; if(text==null) return {header:[],rows:[]};
+    const ck=(opts.delim||'')+'|'+(opts.skipTitle?1:0)+'|'+text.length; const hit=_csvCache.get(ck);
+    if(hit && hit.text===text) return hit.res;
+    const res=parseCSVraw(text,opts); _csvCache.set(ck,{text:text,res:res}); if(_csvCache.size>16) _csvCache.delete(_csvCache.keys().next().value); return res; }
+  function parseCSVraw(text, opts){
     text=String(text).replace(/^\uFEFF/,''); let lines=text.split(/\r\n|\n|\r/);
     while(lines.length && lines[lines.length-1]==='') lines.pop(); if(!lines.length) return {header:[],rows:[]};
     // a whole semicolon line wrapped in quotes (e.g. "id;Created (UTC);...") means it was stored in one cell: unwrap all lines
@@ -270,7 +278,9 @@ tbody tr:hover .fz{background:#111c34}
     for(let i=idx+1;i<lines.length;i++){ if(lines[i]==='')continue; const cells=tok(lines[i],d); const o={};
       for(let j=0;j<header.length;j++) o[header[j]]=(cells[j]!==undefined?cells[j]:'').trim(); rows.push(o);} return {header,rows}; }
   function num(v){ if(v===undefined||v===null||v==='')return 0; const n=parseFloat(String(v).replace(/[, ]/g,'')); return isNaN(n)?0:n; }
-  function parseDate(v){ if(!v)return null; const m=String(v).trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T]?(\d{2})?:?(\d{2})?(?::(\d{2}))?/);
+  const _dateCache=new Map();
+  function parseDate(v){ if(!v)return null; const hit=_dateCache.get(v); if(hit!==undefined) return hit; const r=parseDate0(v); if(_dateCache.size>200000) _dateCache.clear(); _dateCache.set(v,r); return r; }
+  function parseDate0(v){ if(!v)return null; const m=String(v).trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T]?(\d{2})?:?(\d{2})?(?::(\d{2}))?/);
     if(m) return Date.UTC(+m[1],+m[2]-1,+m[3],+(m[4]||0),+(m[5]||0),+(m[6]||0)); const d=Date.parse(v); return isNaN(d)?null:d; }
   function isBlankFunnel(v){ const s=(v==null?'':String(v)).trim().toLowerCase(); return s==='' || s==='null'; }
 
@@ -412,7 +422,8 @@ tbody tr:hover .fz{background:#111c34}
     episodes.forEach(ep=>{ if(ep.outcome==='pending'){ if(pastDueNow(ep.cid)) { ep.outcome='open'; openEp[ep.cid]=ep; } else ep.outcome='lost'; } });
     ['soft','bank','hard','all'].forEach(g=>{ const list=episodes.filter(ep=>g==='all'||ep.g===g); tab[g]={}; T.forEach(t=>{ tab[g][t]=rate(list,t); }); });
     const retryP={};
-    Object.keys(openEp).forEach(cid=>{ const ep=openEp[cid]; const age=(asOfGuess()-ep.start)/DAY; const t=age>=7?7:age>=3?3:0;
+    const _asOfG=asOfGuess();
+    Object.keys(openEp).forEach(cid=>{ const ep=openEp[cid]; const age=(_asOfG-ep.start)/DAY; const t=age>=7?7:age>=3?3:0;
       const r=tab[ep.g][t]&&tab[ep.g][t].n>=8?tab[ep.g][t]:tab.all[t]; retryP[cid]=r&&r.p!=null?r.p:0.3; });
     function asOfGuess(){ let m=0; pay.rows.forEach(r=>{ const d=parseDate(r['Created date (UTC)']); if(d&&d>m)m=d; }); customers.forEach(c=>{ if(c.created>m)m=c.created; }); return cfg.asOf?parseDate(cfg.asOf+' 00:00'):m; }
     const retryModel={table:tab, episodes:episodes.filter(res).length};
@@ -900,19 +911,22 @@ tbody tr:hover .fz{background:#111c34}
     const scfg = Object.assign({}, cfg, { families: cfg.families.map(function(f){
       const b=(f.benchmarks&&f.benchmarks[scen])?f.benchmarks[scen]:f.benchmark;
       return Object.assign({}, f, { benchmark:b }); }) });
-    const ctx=buildModel(raw, scfg, selectedCampaigns, selectedCountries);
+    const ctx=buildModel(raw, scfg, selectedCampaigns, selectedCountries); let __wk;
     const famCounts={}; ctx.filtered.forEach(c=>{ const k=c.starter?c.starter.key:'none'; famCounts[k]=(famCounts[k]||0)+1; });
     const paid=ctx.filtered.length; // eligible already requires pc>0
     const active=ctx.filtered.filter(c=>c.active).length;
     const repeat=ctx.filtered.filter(c=>c.netPaidCount>=2).length;
     const refundTotal=ctx.filtered.reduce((s,c)=>s+c.revRefunds,0);
     const refundCusts=ctx.filtered.filter(c=>c.revRefunds>0).length;
-    const refundRatePct=ctx.gross>0? refundTotal/ctx.gross*100 : null;
+    const refundRateRevPct=ctx.gross>0? refundTotal/ctx.gross*100 : null;
+    let _pays=0,_refPays=0; ctx.filtered.forEach(c=>(c.payments||[]).forEach(p=>{ _pays++; if(p.refunded>0) _refPays++; }));
+    const refundRatePct=_pays? _refPays/_pays*100 : refundRateRevPct;   // headline: share of payments refunded (events)
+    const refundCustPct=ctx.filtered.length? refundCusts/ctx.filtered.length*100 : null;
     return {
       meta:{ asOf:ctx.asOf, startMs:ctx.startMs, currency:ctx.cur.toUpperCase(),
         customers:ctx.customers.length, eligible:ctx.filtered.length, excluded:ctx.excluded.length,
         paid, active, repeat, familyCounts:famCounts,
-        refundTotal, refundCusts, refundRatePct,
+        refundTotal, refundCusts, refundRatePct, refundRateRevPct, refundCustPct, refundPays:_refPays, totalPays:_pays,
         scenario:scen, scenarios:(cfg.scenarios||['optimistic']),
         benchmarks: scfg.families.map(function(f){return {key:f.key,label:f.label,benchmark:f.benchmark};}),
         haircutMult:ctx.haircutMult, net:ctx.net, gross:ctx.gross,
@@ -924,7 +938,7 @@ tbody tr:hover .fz{background:#111c34}
         aliasApplied:ctx.spend.aliasApplied, unmatched:ctx.spend.unmatched, dq:ctx.dq },
       families: scfg.families.map(f=>({key:f.key,label:f.label,shortLabel:f.shortLabel})),
       monthly: cohortTab(ctx,scfg,'monthly'),
-      weekly: cohortTab(ctx,scfg,'weekly'),
+      weekly: (__wk=cohortTab(ctx,scfg,'weekly')),
       retTrial: retentionTab(ctx,scfg,'trialMonthly'),
       retMonthly: retentionTab(ctx,scfg,'monthly'),
       retQuarterly: retentionTab(ctx,scfg,'quarterly'),
@@ -938,7 +952,7 @@ tbody tr:hover .fz{background:#111c34}
       campaigns: campaignList(ctx),
       countries: (function(){ if(!ctx.countrySource) return []; const o={}; ctx.elig.forEach(c=>{ o[c.country]=(o[c.country]||0)+1; }); return Object.keys(o).sort((a,b)=>o[b]-o[a]).map(k=>({code:k,n:o[k]})); })(),
       cohortDates: cohortDates(ctx),
-      cpaTrend: cohortTab(ctx,scfg,'weekly').map(w=>({label:w.label,cpa:w.cpa,spend:w.spend,New:w.New}))
+      cpaTrend: __wk.map(w=>({label:w.label,cpa:w.cpa,spend:w.spend,New:w.New}))
     };
   }
 
@@ -1096,7 +1110,7 @@ function scenarioFitPanel(sf){var sum=document.getElementById('fitSummary'),body
   +'<div class="note">Each step = share of customers who reached that renewal and paid it, among those who paid the previous one (net of refunds/disputes). Range = floor \u2192 floor + customers still in payment retry. Scenario columns are each scenario\u2019s implied step rate. Steps where all scenarios assume the same rate can\u2019t tell them apart; the verdict uses only deciding steps with n \u2265 '+sf.minSample+'. Updates automatically as renewals land.</div></div>';}
 function stat(v,l,acc,tip){return '<div class="stat'+(acc?' accent':'')+'"'+(tip?' title="'+tip.replace(/"/g,'&quot;')+'"':'')+'><b>'+v+'</b><span>'+l+'</span></div>';}
 function header(res){var m=res.meta;CUR=m.currency;function d(x){return new Date(x).toISOString().slice(0,10);}
- document.getElementById("statStrip").innerHTML=stat(m.eligible.toLocaleString(),"Eligible",false,"Customers with a non-empty ff_funnel AND at least one payment (created on/after start, minus exclusions). This is the new-customer base the whole model is built on.")+stat(m.active.toLocaleString(),"Active",false,"Eligible customers whose subscription is still active, trialing, or in payment retry (past_due) — i.e. not fully canceled/churned.")+stat(m.repeat.toLocaleString(),"Repeat",false,"Eligible customers with 2+ NET paid charges — i.e. converted/renewed at least once, counting only charges not fully refunded or disputed.")+stat(m.refundRatePct!=null?(m.refundRatePct.toFixed(1)+"%"):"—","Refund rate",false,"Refunds as a share of gross charged revenue — "+usd(m.refundTotal||0)+" across "+(m.refundCusts||0)+" customers.")
+ document.getElementById("statStrip").innerHTML=stat(m.eligible.toLocaleString(),"Eligible",false,"Customers with a non-empty ff_funnel AND at least one payment (created on/after start, minus exclusions). This is the new-customer base the whole model is built on.")+stat(m.active.toLocaleString(),"Active",false,"Eligible customers whose subscription is still active, trialing, or in payment retry (past_due) — i.e. not fully canceled/churned.")+stat(m.repeat.toLocaleString(),"Repeat",false,"Eligible customers with 2+ NET paid charges — i.e. converted/renewed at least once, counting only charges not fully refunded or disputed.")+stat(m.refundRatePct!=null?(m.refundRatePct.toFixed(1)+"%"):"—","Refund rate",false,"Share of payments refunded: "+(m.refundPays||0)+" of "+intg(m.totalPays||0)+". By customers: "+(m.refundCustPct!=null?m.refundCustPct.toFixed(2):"—")+"% ("+(m.refundCusts||0)+" people). By revenue: "+(m.refundRateRevPct!=null?m.refundRateRevPct.toFixed(2):"—")+"% ("+usd(m.refundTotal||0)+") — the revenue rate is what the forecast haircut uses.")
   +stat(m.spendTotal?("$"+Math.round(m.spendTotal).toLocaleString()):"—","Spend "+m.spendCurrency,true)+stat(m.cpc!=null?("$"+m.cpc.toFixed(2)):"—","CPC")+stat(m.ctr!=null?((m.ctr*100).toFixed(2)+"%"):"—","CTR")+stat(d(m.asOf),"As of");
  var b=document.getElementById("spendBanner");
  if(m.spendCountryBlanked){b.className="banner warn show";b.innerHTML='<b>Country filter on:</b> showing only '+(selCountries.join(', '))+' customers. Meta spend isn\u2019t broken down by country, so Spend, CPA and ROAS are hidden (revenue, LTV and retention are filtered correctly).';}
@@ -1206,7 +1220,7 @@ function cohortDatesTable(rows){function d(x){return new Date(x).toISOString().s
  document.getElementById("tbl-cohortDates").innerHTML=head+body;}
 
 function renderAll(){
- try{result=Engine.compute({subs:RAW.subs,customers:RAW.customers,prices:RAW.prices,coupons:RAW.coupons,meta:RAW.meta,metaAds:RAW.metaAds,payments:RAW.payments},CONFIG,selected,scenario,selCountries);}catch(e){alert("Compute failed: "+e.message);return;}
+ try{result=Engine.compute({subs:RAW.subs,customers:RAW.customers,prices:RAW.prices,coupons:RAW.coupons,meta:RAW.meta,metaAds:RAW.metaAds,payments:RAW.payments},CONFIG,selected,scenario,selCountries);}catch(e){ (window.__showErr||alert)("Compute failed: "+e.message); return; }
  if(!allCampaigns.length){allCampaigns=result.campaigns.slice();buildCampMenu();}
  if(!allCountries.length){allCountries=result.countries.slice();buildCtryMenu(result.meta.countrySource);document.getElementById('ctryBtn').disabled=!result.meta.countrySource;}
  header(result);scenarioFitPanel(result.scenarioFit);rateChart("rateChartCard",result.monthly);rateChart("rateChartCardWeekly",result.weekly);
@@ -1240,7 +1254,7 @@ function wireCtry(){var f=document.getElementById("ctryFilter");
  document.getElementById("ctryAll").addEventListener("click",function(){Array.prototype.forEach.call(document.querySelectorAll('#ctryOpts input'),function(i){i.checked=true;});});
  document.getElementById("ctryNone").addEventListener("click",function(){Array.prototype.forEach.call(document.querySelectorAll('#ctryOpts input'),function(i){i.checked=false;});});
  document.getElementById("ctryApply").addEventListener("click",function(){var s=Array.prototype.filter.call(document.querySelectorAll('#ctryOpts input'),function(i){return i.checked;}).map(function(i){return i.value;});
-  selCountries=(s.length===allCountries.length||s.length===0)?[]:s; f.classList.remove("open"); renderAll(); ctryLabel();});
+  selCountries=(s.length===allCountries.length||s.length===0)?[]:s; f.classList.remove("open"); ctryLabel(); scheduleRender();});
  document.addEventListener("click",function(e){if(!f.contains(e.target))f.classList.remove("open");});}
 function buildCampMenu(){var opts=document.getElementById("campOpts");
  opts.innerHTML=allCampaigns.map(function(c){return '<label><input type="checkbox" value="'+c.replace(/"/g,'&quot;')+'"'+(selected.length===0||selected.indexOf(c)>=0?' checked':'')+'><span>'+c.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</span></label>';}).join('');
@@ -1252,7 +1266,7 @@ function wireCamp(){var f=document.getElementById("campFilter");
  document.getElementById("campBtn").addEventListener("click",function(){f.classList.toggle("open");});
  document.getElementById("campAll").addEventListener("click",function(){Array.prototype.forEach.call(document.querySelectorAll('#campOpts input'),function(i){i.checked=true;});});
  document.getElementById("campNone").addEventListener("click",function(){Array.prototype.forEach.call(document.querySelectorAll('#campOpts input'),function(i){i.checked=false;});});
- document.getElementById("campApply").addEventListener("click",function(){var s=selectedFromMenu();selected=(s.length===allCampaigns.length)?[]:s;campLabel();f.classList.remove("open");renderAll();});
+ document.getElementById("campApply").addEventListener("click",function(){var s=selectedFromMenu();selected=(s.length===allCampaigns.length)?[]:s;campLabel();f.classList.remove("open");scheduleRender();});
  document.addEventListener("click",function(e){if(!f.contains(e.target))f.classList.remove("open");});
  ["campWeekly","campWeek","campOnly","campSort","adGroupName","adWeekly","adWeek","adCamp","adSort"].forEach(function(id){document.getElementById(id).addEventListener("change",renderBreakdowns);});
  ["campSearchTxt","adSearch"].forEach(function(id){document.getElementById(id).addEventListener("input",renderBreakdowns);});}
@@ -1272,8 +1286,18 @@ function buildScenarioBar(){var bar=document.getElementById("scenarioBar");var s
  bar.innerHTML='<span class="lab">Scenario</span><div class="seg">'+scs.map(function(s){return '<button data-s="'+s+'"'+(s===scenario?' class="active"':'')+'>'+(SCEN_LABELS[s]||s)+'</button>';}).join('')+'</div><span class="cap" id="scenarioCap">'+(SCEN_CAP[scenario]||'')+'</span>';
  bar.querySelector('.seg').addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;scenario=b.getAttribute('data-s');
   Array.prototype.forEach.call(bar.querySelectorAll('.seg button'),function(x){x.classList.toggle('active',x===b);});
-  var cap=document.getElementById('scenarioCap');if(cap)cap.textContent=SCEN_CAP[scenario]||'';renderAll();});}
+  var cap=document.getElementById('scenarioCap');if(cap)cap.textContent=SCEN_CAP[scenario]||'';scheduleRender();});}
 
+(function(){ function show(msg){ var t=document.getElementById('errToast'); if(!t){ t=document.createElement('div'); t.id='errToast'; t.className='errtoast'; document.body.appendChild(t);
+  t.addEventListener('click',function(){ t.style.display='none'; }); }
+  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-02 16:58 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
+ window.addEventListener('error',function(e){ show((e.message||'error')+(e.lineno?(' @'+e.lineno+':'+(e.colno||0)):'')); });
+ window.addEventListener('unhandledrejection',function(e){ show('promise: '+((e.reason&&e.reason.message)||e.reason)); });
+ window.__showErr=show; })();
+function busy(on){ var b=document.getElementById('busyPill'); if(!b){ b=document.createElement('div'); b.id='busyPill'; b.className='busy'; b.textContent='Updating\u2026'; document.body.appendChild(b); } b.style.display=on?'block':'none'; }
+var _rt=null; function scheduleRender(after){ busy(true); if(_rt) clearTimeout(_rt);
+ _rt=setTimeout(function(){ _rt=null; try{ renderAll(); if(after) after(); } catch(e){ if(window.__showErr) window.__showErr('render: '+e.message); } finally { busy(false); } }, 30); }
+window.__scheduleRender=scheduleRender;
 function wireTips(){ var box=document.createElement('div'); box.className='tipbox'; document.body.appendChild(box);
  document.addEventListener('mouseover',function(e){ var t=e.target.closest&&e.target.closest('[data-tip]'); if(!t)return;
   box.innerHTML=t.getAttribute('data-tip'); box.style.display='block';
