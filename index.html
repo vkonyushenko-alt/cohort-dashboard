@@ -130,7 +130,8 @@ nav.tabs button.active{color:#eaf6ff;background:var(--panel2);border-color:var(-
 .matr{color:#9fb3d9;font-size:10px;margin-top:1px}
 .legendbar{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;margin:10px 0 0;font-size:11.5px;color:var(--muted)}
 .legendbar b{color:#eaf6ff}.legendbar .lg-set{color:var(--warn);font-style:italic}.legendbar .lg-proj{color:var(--muted);font-style:italic}
-.offtag{display:inline-block;margin-left:6px;font-size:9.5px;color:#9aa6bd;background:#1a2133;border:1px solid #2a3550;border-radius:5px;padding:1px 6px;vertical-align:middle;cursor:help;font-weight:500}
+.offrow{display:block;margin-top:4px;line-height:1}
+.offtag{display:inline-block;margin-left:0;font-size:9.5px;color:#9aa6bd;background:#1a2133;border:1px solid #2a3550;border-radius:5px;padding:1px 6px;vertical-align:middle;cursor:help;font-weight:500}
 .offtag.none{color:#c9a96b;border-color:#4a3d1e;background:#2a2413}
 tr.inactive .coh{color:var(--muted)}
 .rt{color:var(--warn);font-size:9.5px}
@@ -188,7 +189,7 @@ tbody tr:hover .fz{background:#111c34}
 .foot{color:var(--faint);font-size:11px;margin-top:26px;text-align:center}
 </style></head><body><div class="wrap">
 <header class="top">
-  <div class="brand"><h1>Cohort Revenue Model<span class="buildtag">build 2026-10-05 11:43 UTC</span></h1>
+  <div class="brand"><h1>Cohort Revenue Model<span class="buildtag">build 2026-10-05 12:07 UTC</span></h1>
   <div class="sub"><span id="dataStamp" style="color:var(--faint)"></span><br>AI hairstyle app · Stripe + Meta · cumulative-revenue ROAS with continuation-rate forecasting</div></div>
   <div class="stat-strip" id="statStrip"></div>
 </header>
@@ -261,7 +262,7 @@ tbody tr:hover .fz{background:#111c34}
 <section class="view" data-view="audit"><div class="view-head"><h2>Audit</h2><span class="desc">Per-week reconciliation · no customer-level PII</span></div><div class="tablecard"><table id="tbl-audit"></table></div></section>
 <section class="view" data-view="methodology"><div class="doc" id="docMethodology"></div></section>
 
-<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-10-05 11:43 UTC · authenticated · data loaded from a protected backend</div>
+<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-10-05 12:07 UTC · authenticated · data loaded from a protected backend</div>
 </div>
 <script>
 /* Cohort revenue model — compute engine v3 (spec-aligned). Pure functions, no DOM. */
@@ -1113,8 +1114,8 @@ function cohortTable(id,rows,firstHead,showSplit,showLTV,extra){
   var lab=extra.useBase?(r.baseLabel||r.label):r.label;
   var stTag='';
   if(extra.useBase && r.activeState==='off'){ var ld=new Date(r.lastSpend).toISOString().slice(5,10).replace('-','/');
-    stTag=' <span class="offtag" data-tip="No Meta spend since '+new Date(r.lastSpend).toISOString().slice(0,10)+' (data through '+new Date(r.metaLast).toISOString().slice(0,10)+') \u2014 likely turned off. Its customers keep renewing, so revenue and retention still update.">off since '+ld+'</span>'; }
-  else if(extra.useBase && r.activeState==='nospend') stTag=' <span class="offtag none" data-tip="No Meta spend found for this name \u2014 e.g. a tag that doesn\u2019t match a Meta campaign/ad, or an unfilled UTM placeholder.">no Meta spend</span>';
+    stTag='<div class="offrow"><span class="offtag" data-tip="No Meta spend since '+new Date(r.lastSpend).toISOString().slice(0,10)+' (data through '+new Date(r.metaLast).toISOString().slice(0,10)+') \u2014 likely turned off. Its customers keep renewing, so revenue and retention still update.">off since '+ld+'</span></div>'; }
+  else if(extra.useBase && r.activeState==='nospend') stTag='<div class="offrow"><span class="offtag none" data-tip="No Meta spend found for this name \u2014 e.g. a tag that doesn\u2019t match a Meta campaign/ad, or an unfilled UTM placeholder.">no Meta spend</span></div>';
   var s='<tr'+(extra.useBase&&r.activeState&&r.activeState!=='active'?' class="inactive"':'')+'><td class="l fz c1"><span class="coh" title="'+esc(lab)+'">'+esc(lab)+'</span>'+tag+stTag+'</td>'
    +(extra.week?'<td class="l">'+esc(r.weekLabel||'—')+'</td>':'')
    +(extra.adId?'<td class="l mono">'+esc(r.adId||'—')+'</td>':'')
@@ -1379,7 +1380,7 @@ async function ensureSnapshots(){ if(ensureSnapshots.done||!window.__api||!LIVE)
   var wid='live_'+dDay;
   if(!ids[wid] && (!lastW || dAsOf-lastW>=7*86400000-60000)) todo.push({id:wid,kind:'weekly',label:'Live forecast, data through '+dDay,cutoff:null,dataDate:dAsOf});
   for(var i=0;i<todo.length;i++){ var t=todo[i]; busy(true); await new Promise(function(r){setTimeout(r,60);});
-   var snap=Engine.snapshot(rawObj(),CONFIG,{id:t.id,kind:t.kind,label:t.label,cutoff:t.cutoff,build:'2026-10-05 11:43 UTC'}); snap.cutoff=(t.kind==='weekly')?t.dataDate:t.cutoff; busy(false);
+   var snap=Engine.snapshot(rawObj(),CONFIG,{id:t.id,kind:t.kind,label:t.label,cutoff:t.cutoff,build:'2026-10-05 12:07 UTC'}); snap.cutoff=(t.kind==='weekly')?t.dataDate:t.cutoff; busy(false);
    var res=await window.__api.save(snap); dlog('snapshot '+t.id+': '+(res&&res.saved?'saved':'already existed')); SNAPCACHE[t.id]=snap; }
   if(todo.length){ SNAPS=await window.__api.list(); fillHistory(); }
   var steps=SNAPS.filter(function(x){return x.kind==='step';}); for(var j=0;j<steps.length;j++){ try{ await getSnap(steps[j].id); }catch(e){ dlog('load '+steps[j].id+': '+e.message); } }
@@ -1465,7 +1466,7 @@ function buildScenarioBar(){var bar=document.getElementById("scenarioBar");var s
 
 (function(){ function show(msg){ var t=document.getElementById('errToast'); if(!t){ t=document.createElement('div'); t.id='errToast'; t.className='errtoast'; document.body.appendChild(t);
   t.addEventListener('click',function(){ t.style.display='none'; }); }
-  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-05 11:43 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
+  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-05 12:07 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
  window.addEventListener('error',function(e){ show((e.message||'error')+(e.lineno?(' @'+e.lineno+':'+(e.colno||0)):'')); });
  window.addEventListener('unhandledrejection',function(e){ show('promise: '+((e.reason&&e.reason.message)||e.reason)); });
  window.__showErr=show; })();
@@ -1473,7 +1474,7 @@ var __dlog=[]; function dlog(m){ __dlog.push(new Date().toISOString().slice(11,1
 window.dlog=dlog;
 function showDiag(){ function t(f){ try{ return f(); }catch(e){ return 'ERR '+e.message; } }
  var auth=t(function(){ var ss=Object.keys(sessionStorage).filter(function(k){return /auth/.test(k);}), ls=Object.keys(localStorage).filter(function(k){return /auth/.test(k);}); return 'sessionStorage: '+(ss.join(',')||'none')+' | localStorage: '+(ls.join(',')||'none'); });
- var lines=['Build: 2026-10-05 11:43 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
+ var lines=['Build: 2026-10-05 12:07 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
   'Hosted mode: '+!!window.__HOSTED__, 'Boots: '+(window.__bootCount||0),
   'sessionStorage works: '+t(function(){ sessionStorage.setItem('__d','1'); sessionStorage.removeItem('__d'); return 'yes'; }),
   'Auth tokens: '+auth,
