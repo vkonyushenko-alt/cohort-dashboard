@@ -14,8 +14,10 @@
 #authGate .err{color:#fb7185;font:12px -apple-system,Segoe UI,Roboto,Arial;min-height:16px;margin-top:8px}
 #authGate .note{color:#556080;font:11px -apple-system,Segoe UI,Roboto,Arial;margin-top:14px;text-align:center}
 body.locked{overflow:hidden}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid #1c2740;border-top-color:#22d3ee;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-1px}@keyframes sp{to{transform:rotate(360deg)}}
 .signout{position:fixed;top:12px;right:14px;z-index:90;background:#111a2e;color:#8595b4;border:1px solid #1c2740;border-radius:8px;padding:6px 11px;font-size:11.5px;cursor:pointer}
 .signout:hover{color:#e8eefb}
+.signout.refresh{right:96px}
 </style>
 <style>
 :root{--bg:#070b16;--bg2:#0a1020;--panel:#0d1424;--panel2:#111a2e;--line:#1c2740;--line2:#161f34;
@@ -102,7 +104,7 @@ nav.tabs button.active{color:#eaf6ff;background:var(--panel2);border-color:var(-
 .toggle input{accent-color:var(--cyan)}
 .errtoast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:300;max-width:560px;background:#2a1220;border:1px solid #7a2a44;color:#ffd6e0;border-radius:10px;padding:10px 14px;font-size:12px;line-height:1.5;display:none;cursor:pointer;box-shadow:0 10px 30px rgba(0,0,0,.5)}
 .errtoast code{color:#ffb3c6;font-size:11px;word-break:break-word}
-.diagbox{position:fixed;inset:40px 40px auto 40px;max-height:80vh;overflow:auto;z-index:400;background:#0b1222;border:1px solid var(--cyan-line);border-radius:12px;padding:12px 14px;display:none;box-shadow:0 20px 50px rgba(0,0,0,.6)}
+.diagbox{position:fixed;inset:40px 40px auto 40px;max-height:80vh;overflow:auto;z-index:1001;background:#0b1222;border:1px solid var(--cyan-line);border-radius:12px;padding:12px 14px;display:none;box-shadow:0 20px 50px rgba(0,0,0,.6)}
 .diagbox pre{font:11.5px ui-monospace,Menlo,monospace;color:#c9d4ea;white-space:pre-wrap;margin:8px 0 0}
 .diaghead{display:flex;justify-content:space-between;align-items:center;color:#eaf6ff;font-size:13px}.diaghead button{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:4px 10px;cursor:pointer}
 .buildtag{font-size:10.5px;color:var(--faint);font-weight:400;margin-left:8px;-webkit-text-fill-color:var(--faint)}
@@ -176,8 +178,8 @@ tbody tr:hover .fz{background:#111c34}
 .foot{color:var(--faint);font-size:11px;margin-top:26px;text-align:center}
 </style></head><body><div class="wrap">
 <header class="top">
-  <div class="brand"><h1>Cohort Revenue Model<span class="buildtag">build 2026-10-02 17:22 UTC</span></h1>
-  <div class="sub">AI hairstyle app · Stripe + Meta · cumulative-revenue ROAS with continuation-rate forecasting</div></div>
+  <div class="brand"><h1>Cohort Revenue Model<span class="buildtag">build 2026-10-05 10:05 UTC</span></h1>
+  <div class="sub"><span id="dataStamp" style="color:var(--faint)"></span><br>AI hairstyle app · Stripe + Meta · cumulative-revenue ROAS with continuation-rate forecasting</div></div>
   <div class="stat-strip" id="statStrip"></div>
 </header>
 <div class="scenario-bar" id="scenarioBar"></div>
@@ -247,7 +249,7 @@ tbody tr:hover .fz{background:#111c34}
 <section class="view" data-view="audit"><div class="view-head"><h2>Audit</h2><span class="desc">Per-week reconciliation · no customer-level PII</span></div><div class="tablecard"><table id="tbl-audit"></table></div></section>
 <section class="view" data-view="methodology"><div class="doc" id="docMethodology"></div></section>
 
-<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-10-02 17:22 UTC · authenticated · data loaded from a protected backend</div>
+<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-10-05 10:05 UTC · authenticated · data loaded from a protected backend</div>
 </div>
 <script>
 /* Cohort revenue model — compute engine v3 (spec-aligned). Pure functions, no DOM. */
@@ -407,6 +409,7 @@ tbody tr:hover .fz{background:#111c34}
       (payBy[cid]=payBy[cid]||[]).push({created:cr,net:amt-ref,gross:amt,refunded:ref}); });
     Object.keys(payBy).forEach(k=>payBy[k].sort((a,b)=>a.created-b.created));
     const hasPayments=payRows>0;
+    let dataDates={};
     const failedBy={}; pay.rows.forEach(r=>{ if((r['Status']||'').toLowerCase()==='failed'){ const cid=r['Customer ID']; if(cid) failedBy[cid]=(failedBy[cid]||0)+1; } });
     // payment-retry episodes: a run of failed attempts ending in a paid charge (recovered), or abandoned (lost), or still open
     const SOFT=['insufficient_funds','try_again_later','card_velocity_exceeded','processing_error','issuer_not_available'];
@@ -435,7 +438,7 @@ tbody tr:hover .fz{background:#111c34}
     const retryModel={table:tab, episodes:episodes.filter(res).length};
 
     // classify by earliest qualifying subscription
-    let multiFam=0;
+    let multiFam=0, unknownPlan=0;
     elig.forEach(c=>{
       const arr0=subsBy[c.id]||[];
       const realArr=arr0.filter(s=>{const st=s.status||'';return st!=='incomplete'&&st!=='incomplete_expired';});
@@ -446,7 +449,7 @@ tbody tr:hover .fz{background:#111c34}
       c.subCreated = chosen? chosen.created : c.created;   // aging uses subscription Created
       const fams=new Set(arr.map(s=>{const f=classify(s,cfg,prices,fx);return f?f.key:null;}).filter(Boolean));
       if(fams.size>1) multiFam++;
-      if(!fam) warn('unknown_plan','Customer '+c.id.slice(0,10)+' has no subscription matching a known plan family.');
+      if(!fam) unknownPlan++;
       c.active=arr.some(s=>s.status==='active'||s.status==='trialing'||s.status==='past_due');
       c.canceledReq=arr.some(s=>s.reason==='cancellation_requested');
       c.weekKey=weekStart(c.created); c.monthKey=monthStart(c.created);
@@ -465,6 +468,7 @@ tbody tr:hover .fz{background:#111c34}
       if(c.disputes>0) npc = Math.max(0, npc-1);
       c.netPaidCount = npc;
     });
+    if(unknownPlan) warn('unknown_plan', unknownPlan+' eligible customer(s) have no subscription matching a known plan (prices tab missing or out of date?). They are counted as customers but excluded from T2P, renewals and forecasts.');
     if(multiFam) warn('multi_family', multiFam+' customer(s) match more than one plan family (earliest sub used).');
 
     // asOf
@@ -486,6 +490,22 @@ tbody tr:hover .fz{background:#111c34}
     if(adSpend.hasData){ const ids=Object.keys(adSpend.byId); const rounded=ids.filter(x=>/0000$/.test(x)||/e\+/i.test(x)).length;
       if(ids.length>=5 && rounded/ids.length>0.5) warn('meta_ids_rounded','Most Meta Ad IDs end in 0000 or are in scientific notation \u2014 they were likely rounded by Google Sheets, so ads can\u2019t be matched to their spend. Re-import the meta tab with "Convert text to numbers, dates, and formulas" turned OFF.'); }
     if(countrySource && spend.hasSpend && !spend.hasCountry) warn('meta_no_country','The Meta export has no Country column, so Spend / CPA / ROAS are hidden when a country filter is on. Re-export Meta with Breakdown \u2192 Country.');
+    // freshness: every tab should come from the same export date; an older payments tab silently lowers T2P / renewals
+    const latest={ customers:0, subs:0, payments:0, meta:0 };
+    customers.forEach(c=>{ if(c.created>latest.customers) latest.customers=c.created; });
+    subs.forEach(x=>{ if(x.created&&x.created>latest.subs) latest.subs=x.created; });
+    pay.rows.forEach(r=>{ const d=parseDate(r['Created date (UTC)']||r['Created (UTC)']); if(d&&d>latest.payments) latest.payments=d; });
+    Object.keys(spend.byWeek||{}).length; (function(){ try{ const md=parseCSV(raw.meta,{}); const cd=md.header.find(x=>/^day$|reporting starts/i.test(x.trim()));
+      if(cd) md.rows.forEach(r=>{ const d=parseDate(r[cd]); if(d&&d>latest.meta) latest.meta=d; }); }catch(e){} })();
+    const ref=Math.max(latest.customers,latest.subs);
+    const ds=x=>x?new Date(x).toISOString().slice(0,10):'—';
+    if(hasPayments && latest.payments && ref-latest.payments>1.5*DAY)
+      warn('stale_payments','The payments tab is older than customers/subscriptions (payments through '+ds(latest.payments)+', customers through '+ds(ref)+'). Conversions and renewals paid after '+ds(latest.payments)+' are missing, so T2P and M1 will look too low for recent weeks. Re-import the latest payments export.');
+    if(spend.hasSpend && latest.meta && ref-latest.meta>2.5*DAY)
+      warn('stale_meta','The meta tab is older than customers (Meta through '+ds(latest.meta)+', customers through '+ds(ref)+'). Spend for recent days is missing, so CPA/ROAS for recent weeks will look too good. Re-import the latest Meta export.');
+    if(latest.customers && latest.subs && Math.abs(latest.customers-latest.subs)>1.5*DAY)
+      warn('stale_subs','Customers and subscriptions exports are from different dates (customers through '+ds(latest.customers)+', subscriptions through '+ds(latest.subs)+'). Re-export both together.');
+    dataDates={ customers:latest.customers, subs:latest.subs, payments:latest.payments, meta:latest.meta };
     if(!hasPayments) warn('no_payments','No payments export loaded — realized revenue uses customer Total Spend (net of refunds) as a proxy; transaction-level reconciliation unavailable.');
     else {
       const tsNet=elig.reduce((s,c)=>s+c.totalSpend*tsRate,0);
@@ -529,7 +549,7 @@ tbody tr:hover .fz{background:#111c34}
       famCont[f.key]=continuationRates(fm, f, asOf, cfg.historicalMinCohort||15); });
 
     return { prices, subs, subsBy, customers, elig, filtered, excluded, spend, adSpend, hasPayments, payRows, toCur, cur, asOf, startMs,
-      haircutMult, net, gross, dq, aliases, famCont, failedBy, countrySource, countryOn, retryP, retryModel };
+      haircutMult, net, gross, dq, aliases, famCont, failedBy, countrySource, countryOn, retryP, retryModel, dataDates };
   }
 
   // Link clicks per row: use "Link clicks" if exported, else reconstruct from CTR (link) x Impressions, else Spend / CPC (link)
@@ -940,7 +960,7 @@ tbody tr:hover .fz{background:#111c34}
         hasSpend:ctx.spend.hasSpend, spendMode:ctx.spend.mode, spendTotal:ctx.spend.total,
         spendCurrency:ctx.spend.currency, clicks:ctx.spend.clicks, impressions:ctx.spend.impressions,
         ctr:ctx.spend.ctr, cpc:ctx.spend.cpc, cpm:ctx.spend.cpm,
-        countrySource:ctx.countrySource, countryOn:ctx.countryOn, spendHasCountry:!!ctx.spend.hasCountry, countryMismatch:ctx.spend.countryMismatch||null, clicksDerived:!!ctx.spend.clicksDerived, retryModel:ctx.retryModel, spendCountryBlanked:!!ctx.spend.countryBlanked,
+        dataDates:ctx.dataDates, countrySource:ctx.countrySource, countryOn:ctx.countryOn, spendHasCountry:!!ctx.spend.hasCountry, countryMismatch:ctx.spend.countryMismatch||null, clicksDerived:!!ctx.spend.clicksDerived, retryModel:ctx.retryModel, spendCountryBlanked:!!ctx.spend.countryBlanked,
         aliasApplied:ctx.spend.aliasApplied, unmatched:ctx.spend.unmatched, dq:ctx.dq },
       families: scfg.families.map(f=>({key:f.key,label:f.label,shortLabel:f.shortLabel})),
       monthly: cohortTab(ctx,scfg,'monthly'),
@@ -981,6 +1001,7 @@ var SLOTS=[["subs","Subscriptions","Stripe · Product/Price, Created, Trial Star
 ["metaAds","Meta ad spend (by ad ID)","Day · Ad ID · Amount spent — joins to utm_term for the ad tab"]];
 var RAW={}; SLOTS.forEach(function(s){var v=DEFAULT_B64[s[0]]||"";RAW[s[0]]=(v==="=meta")?null:dec(v);}); if(RAW.metaAds===null) RAW.metaAds=RAW.meta;
 // hosted mode: authenticated backend injects CSV text here, then calls __boot()
+window.__onDataRefreshed=function(){ allCampaigns=[]; allCountries=[]; scheduleRender(function(){ campLabel(); ctryLabel(); dataStamp(); }); };
 window.__setData=function(obj){ if(!obj)return; SLOTS.forEach(function(s){ if(obj[s[0]]!=null) RAW[s[0]]=String(obj[s[0]]); }); if(!RAW.metaAds && RAW.meta) RAW.metaAds=RAW.meta; };
 var pending={}, result=null, selected=[], allCampaigns=[];
 var scenario=(CONFIG.defaultScenario||'optimistic');
@@ -1114,6 +1135,9 @@ function scenarioFitPanel(sf){var sum=document.getElementById('fitSummary'),body
   return '<tr><td class="l">'+esc(st.familyLabel)+'</td><td class="l">'+esc(st.step)+'</td><td>'+intg(st.n)+'</td><td>'+obs+'</td>'+bc+'<td class="l">'+verdict+'</td></tr>';}).join('');
  body.innerHTML='<div class="fitwrap"><table><thead><tr><th class="l">Plan</th><th class="l">Renewal step</th><th>Eligible n</th><th>Observed</th>'+scs.map(function(s){return '<th>'+(SCEN_LABELS[s]||s)+'</th>';}).join('')+'<th class="l">Closest</th></tr></thead><tbody>'+rows+'</tbody></table>'
   +'<div class="note">Each step = share of customers who reached that renewal and paid it, among those who paid the previous one (net of refunds/disputes). Range = floor \u2192 floor + customers still in payment retry. Scenario columns are each scenario\u2019s implied step rate. Steps where all scenarios assume the same rate can\u2019t tell them apart; the verdict uses only deciding steps with n \u2265 '+sf.minSample+'. Updates automatically as renewals land.</div></div>';}
+function dataStamp(){ var el=document.getElementById('dataStamp'); if(!el) return; var st=window.__dataStatus; if(!st){ el.textContent=''; return; }
+ var t=new Date(st.at).toTimeString().slice(0,5); var c=st.cache||'';
+ el.textContent=c.indexOf('hit')===0?('data loaded '+t+' \u00b7 from cache ('+c.replace('hit ','')+' old) \u2014 use \u21bb Refresh data for the latest Sheet'):('data read fresh from the Sheet at '+t); }
 function stat(v,l,acc,tip){return '<div class="stat'+(acc?' accent':'')+'"'+(tip?' title="'+tip.replace(/"/g,'&quot;')+'"':'')+'><b>'+v+'</b><span>'+l+'</span></div>';}
 function header(res){var m=res.meta;CUR=m.currency;function d(x){return new Date(x).toISOString().slice(0,10);}
  document.getElementById("statStrip").innerHTML=stat(m.eligible.toLocaleString(),"Eligible",false,"Customers with a non-empty ff_funnel AND at least one payment (created on/after start, minus exclusions). This is the new-customer base the whole model is built on.")+stat(m.active.toLocaleString(),"Active",false,"Eligible customers whose subscription is still active, trialing, or in payment retry (past_due) — i.e. not fully canceled/churned.")+stat(m.repeat.toLocaleString(),"Repeat",false,"Eligible customers with 2+ NET paid charges — i.e. converted/renewed at least once, counting only charges not fully refunded or disputed.")+stat(m.refundRatePct!=null?(m.refundRatePct.toFixed(1)+"%"):"—","Refund rate",false,"Share of payments refunded: "+(m.refundPays||0)+" of "+intg(m.totalPays||0)+". By customers: "+(m.refundCustPct!=null?m.refundCustPct.toFixed(2):"—")+"% ("+(m.refundCusts||0)+" people). By revenue: "+(m.refundRateRevPct!=null?m.refundRateRevPct.toFixed(2):"—")+"% ("+usd(m.refundTotal||0)+") — the revenue rate is what the forecast haircut uses.")
@@ -1145,6 +1169,7 @@ function docDataSource(res){var m=res.meta;function d(x){return new Date(x).toIS
  +'<li><b>Stripe payments</b> \u2014 id, Customer ID, Created date, Amount, Currency, Converted Amount / Refunded / Currency, Status, Decline Reason. <b>Source of truth for revenue</b> (D0, net, refunds, ROAS, LTV), conversion and payment retries. '+st(m.hasPayments,m.hasPayments?(intg(m.payRows)+' captured payments loaded'):'not loaded \u2014 Total Spend used as a fallback')+'</li>'
  +'<li><b>Prices</b> \u2014 Price ID, Product ID, Amount, Currency, Interval, Interval Count. Used to classify plans by length (1-week trial + 4 weeks, 4 weeks, 12 weeks) in any currency.</li>'
  +'<li><b>Meta ads</b> \u2014 Day, Campaign name, Ad name, Ad ID, Country, Amount spent, Impressions, CTR / CPC (link). Spend is joined to campaigns and, via the Ad ID at the end of utm_term, to ads. '+st(m.hasSpend,m.hasSpend?('spend '+usd(m.spendTotal)+(m.spendHasCountry?' with country split':' (no country split)')):'not loaded')+(m.clicksDerived?' Link clicks are not exported directly, so they are rebuilt per row from CTR \u00d7 impressions.':'')+'</li></ul></div>'
+ +(m.dataDates?('<div class="block"><h3>Data through (latest record in each tab)</h3><p>'+['customers','subs','payments','meta'].map(function(k){var v=m.dataDates[k];return '<b>'+k+'</b> '+(v?new Date(v).toISOString().slice(0,10):'\u2014');}).join(' \u00b7 ')+'</p><p style="color:var(--muted)">All four should be within a day of each other. If payments or meta is older, recent T2P / renewals (payments) or spend (meta) will be understated \u2014 a warning appears in Data Quality.</p></div>'):'')
  +'<div class="block"><h3>Currency</h3><p>Dashboard currency is <b>USD</b>. Payments use Stripe\u2019s <i>Converted Amount</i>, converted from its <i>Converted Currency</i> (USD charges settle in USD; other currencies settle in GBP here). Customer <i>Total Spend</i> is in the account default currency (GBP) and is converted with the GBP rate. Rates are set in <code>config.json \u2192 fx</code>.</p></div>'
  +'<div class="block"><h3>Country</h3><p>Customers are counted by <b>billing country</b> (Address Country); Meta spend by <b>ad-delivery country</b>. They usually match, but a customer can pay with a card from another country than the one the ad was shown in, so per-country CPA/ROAS are close approximations.</p></div>'
  +'<div class="block"><h3>Refreshing</h3><p>Export the full range from <code>'+d(m.startMs)+'</code> to today. In this offline file: <b>Upload exports &amp; recalculate</b> \u2192 pick the files \u2192 <b>Recalculate</b> (or <b>Publish</b> to keep them in this browser). In the hosted version, replace each Google Drive file via <b>Manage versions</b> (keeps the file ID) and reload \u2014 the protected backend reads the latest files.</p></div>'
@@ -1229,7 +1254,7 @@ function renderAll(){
  try{result=Engine.compute({subs:RAW.subs,customers:RAW.customers,prices:RAW.prices,coupons:RAW.coupons,meta:RAW.meta,metaAds:RAW.metaAds,payments:RAW.payments},CONFIG,selected,scenario,selCountries);}catch(e){ (window.__showErr||alert)("Compute failed: "+e.message); return; }
  if(!allCampaigns.length){allCampaigns=result.campaigns.slice();buildCampMenu();}
  if(!allCountries.length){allCountries=result.countries.slice();buildCtryMenu(result.meta.countrySource);document.getElementById('ctryFilter').classList.toggle('disabled',!result.meta.countrySource);}
- header(result);scenarioFitPanel(result.scenarioFit);rateChart("rateChartCard",result.monthly);rateChart("rateChartCardWeekly",result.weekly);
+ header(result);dataStamp();scenarioFitPanel(result.scenarioFit);rateChart("rateChartCard",result.monthly);rateChart("rateChartCardWeekly",result.weekly);
  cohortTable("tbl-monthly",result.monthly,"Cohort",true,true);
  cohortTable("tbl-weekly",result.weekly,"Cohort",true,true);
  cpaTrend(result.cpaTrend);
@@ -1264,8 +1289,8 @@ function wireCtry(){var f=document.getElementById("ctryFilter");
  document.addEventListener("click",function(e){if(f.open&&!f.contains(e.target))f.open=false;});}
 function buildCampMenu(){var opts=document.getElementById("campOpts");
  opts.innerHTML=allCampaigns.map(function(c){return '<label><input type="checkbox" value="'+c.replace(/"/g,'&quot;')+'"'+(selected.length===0||selected.indexOf(c)>=0?' checked':'')+'><span>'+c.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</span></label>';}).join('');
- document.getElementById("campSearch").addEventListener("input",function(){var q=this.value.toLowerCase();
-  Array.prototype.forEach.call(opts.children,function(l){l.style.display=l.textContent.toLowerCase().indexOf(q)>=0?'':'none';});});}
+ var cs=document.getElementById("campSearch"); if(!cs.__wired){ cs.__wired=true; cs.addEventListener("input",function(){var q=this.value.toLowerCase();
+  Array.prototype.forEach.call(opts.children,function(l){l.style.display=l.textContent.toLowerCase().indexOf(q)>=0?'':'none';});}); } }
 function selectedFromMenu(){return Array.prototype.filter.call(document.querySelectorAll('#campOpts input'),function(i){return i.checked;}).map(function(i){return i.value;});}
 function campLabel(){var btn=document.getElementById("campBtn");btn.textContent=(selected.length===0?"All campaigns":selected.length+" campaign"+(selected.length>1?"s":""))+" ▾";}
 function wireCamp(){var f=document.getElementById("campFilter");
@@ -1296,7 +1321,7 @@ function buildScenarioBar(){var bar=document.getElementById("scenarioBar");var s
 
 (function(){ function show(msg){ var t=document.getElementById('errToast'); if(!t){ t=document.createElement('div'); t.id='errToast'; t.className='errtoast'; document.body.appendChild(t);
   t.addEventListener('click',function(){ t.style.display='none'; }); }
-  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-02 17:22 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
+  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-05 10:05 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
  window.addEventListener('error',function(e){ show((e.message||'error')+(e.lineno?(' @'+e.lineno+':'+(e.colno||0)):'')); });
  window.addEventListener('unhandledrejection',function(e){ show('promise: '+((e.reason&&e.reason.message)||e.reason)); });
  window.__showErr=show; })();
@@ -1304,13 +1329,14 @@ var __dlog=[]; function dlog(m){ __dlog.push(new Date().toISOString().slice(11,1
 window.dlog=dlog;
 function showDiag(){ function t(f){ try{ return f(); }catch(e){ return 'ERR '+e.message; } }
  var auth=t(function(){ var ss=Object.keys(sessionStorage).filter(function(k){return /auth/.test(k);}), ls=Object.keys(localStorage).filter(function(k){return /auth/.test(k);}); return 'sessionStorage: '+(ss.join(',')||'none')+' | localStorage: '+(ls.join(',')||'none'); });
- var lines=['Build: 2026-10-02 17:22 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
+ var lines=['Build: 2026-10-05 10:05 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
   'Hosted mode: '+!!window.__HOSTED__, 'Boots: '+(window.__bootCount||0),
   'sessionStorage works: '+t(function(){ sessionStorage.setItem('__d','1'); sessionStorage.removeItem('__d'); return 'yes'; }),
   'Auth tokens: '+auth,
   'Country menu: '+(document.getElementById('ctryFilter').open?'open':'closed')+' | Campaign menu: '+(document.getElementById('campFilter').open?'open':'closed'),
   'Selected countries: '+(selCountries.join(',')||'all')+' | campaigns: '+(selected.length||'all'),
   'Data: '+(result?(result.meta.eligible+' eligible, '+result.campaigns.length+' campaigns, '+result.countries.length+' countries'):'not loaded'),
+  'Data through: '+(result&&result.meta.dataDates?['customers','subs','payments','meta'].map(function(k){var v=result.meta.dataDates[k];return k+' '+(v?new Date(v).toISOString().slice(0,10):'—');}).join(' | '):'—'),
   '', 'Recent events:'].concat(__dlog.slice(-25));
  var d=document.getElementById('diagBox'); if(!d){ d=document.createElement('div'); d.id='diagBox'; d.className='diagbox'; document.body.appendChild(d); }
  d.innerHTML='<div class="diaghead"><b>Diagnostics</b> \u2014 screenshot this and send it <button id="diagClose">Close</button></div><pre>'+lines.join('\n').replace(/</g,'&lt;')+'</pre>';
@@ -1339,11 +1365,12 @@ if(!window.__HOSTED__){ __boot(); }   // self-contained build boots immediately;
 </script>
 <div id="authGate"><div class="card">
   <h2>Cohort Revenue Model</h2><p>Sign in to load the dashboard.</p>
-  <input id="agEmail" type="email" placeholder="email" autocomplete="username">
+  <div id="agLoading" style="display:none;color:#c9d4ea;font:13px -apple-system,Segoe UI,Roboto,Arial;margin:4px 0 14px"><span class="spin"></span> <span id="agLoadTxt">Signed in \u00b7 loading your data\u2026</span></div>
+  <div id="agForm"><input id="agEmail" type="email" placeholder="email" autocomplete="username">
   <input id="agPass" type="password" placeholder="password" autocomplete="current-password">
-  <button id="agBtn">Sign in</button>
+  <button id="agBtn">Sign in</button></div>
   <div class="err" id="agErr"></div>
-  <div class="note">Access is provisioned by an administrator. No public signup.<br>You stay signed in while this tab is open.</div>
+  <div class="note">Access is provisioned by an administrator. No public signup.<br>You stay signed in while this tab is open.<br><a href="#" id="agDiag" style="color:#556080">Diagnostics</a></div>
 </div>
 <script>
 (function(){"use strict";
@@ -1357,29 +1384,47 @@ if(!window.__HOSTED__){ __boot(); }   // self-contained build boots immediately;
   var sb=window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY,
     { auth: { storage:tabStore, persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } });
   var gate=document.getElementById("authGate"); document.body.classList.add("locked");
-  function fail(m){ document.getElementById("agErr").textContent=m||"Sign-in failed."; }
+  var _lt=null;
+  function loading(on,email){ var f=document.getElementById("agForm"), l=document.getElementById("agLoading");
+    if(on){ f.style.display="none"; l.style.display="block"; var t0=Date.now();
+      var who=email?("Signed in as "+email):"Signed in";
+      var tick=function(){ document.getElementById("agLoadTxt").textContent=who+" \u00b7 loading your data\u2026 "+Math.round((Date.now()-t0)/1000)+" s"; };
+      tick(); if(_lt) clearInterval(_lt); _lt=setInterval(tick,1000); }
+    else { if(_lt){ clearInterval(_lt); _lt=null; } l.style.display="none"; f.style.display="block"; } }
+  function fail(m){ loading(false); document.getElementById("agErr").textContent=m||"Sign-in failed."; }
   async function loadData(){
     var fn=(CFG.DATA_FUNCTION||"dashboard-data");
     var url=CFG.SUPABASE_URL.replace(/\/$/,"")+"/functions/v1/"+fn;
     var { data:{ session } } = await sb.auth.getSession();
-    if(!session){ fail("Session expired — sign in again."); return; }
-    document.getElementById("agErr").style.color="#8595b4"; document.getElementById("agErr").textContent="Loading data\u2026";
-    var res=await fetch(url,{ headers:{ Authorization:"Bearer "+session.access_token } });
-    document.getElementById("agErr").style.color="";
-    if(!res.ok){ fail("Backend "+res.status+": "+(await res.text()).slice(0,120)); return; }
+    if(!session){ if(window.dlog) window.dlog("loadData: no session"); fail("Session expired — sign in again."); return; }
+    document.getElementById("agErr").textContent=""; loading(true, session.user&&session.user.email);
+    var res;
+    try{ res=await fetch(url+(window.__wantFresh?"?fresh=1":""),{ headers:{ Authorization:"Bearer "+session.access_token } }); window.__wantFresh=false; }
+    catch(e){ if(window.dlog) window.dlog("loadData: network error "+e.message); fail("Couldn\u2019t reach the data service \u2014 check your connection and reload."); return; }
+    if(!res.ok){ var bt=(await res.text()).slice(0,120); if(window.dlog) window.dlog("loadData: backend "+res.status+" "+bt); fail("Backend "+res.status+": "+bt); return; }
     var payload=await res.json();          // { subs, customers, prices, coupons, meta, metaAds, payments } as CSV text
-    window.__setData(payload);
+    var xc=res.headers.get("x-cache")||"";
+    if(window.dlog) window.dlog("data loaded"+(xc?(" (cache: "+xc+")"):""));
+    window.__dataStatus={ at:Date.now(), cache:xc };
+    window.__setData(payload); loading(false);
+    if(window.__booted){ if(window.__onDataRefreshed) window.__onDataRefreshed(); return; }
     gate.style.display="none"; document.body.classList.remove("locked");
     window.__boot();
     var so=document.createElement("button"); so.textContent="Sign out"; so.className="signout";
     so.onclick=async function(){ await sb.auth.signOut(); location.reload(); }; document.body.appendChild(so);
+    var rf=document.createElement("button"); rf.textContent="\u21bb Refresh data"; rf.className="signout refresh"; rf.title="Read the Google Sheet again now (skips the 5-minute cache)";
+    rf.onclick=async function(){ rf.disabled=true; rf.textContent="Refreshing\u2026"; window.__wantFresh=true;
+      try{ await loadData(); } finally { rf.disabled=false; rf.textContent="\u21bb Refresh data"; } };
+    document.body.appendChild(rf);
   }
   async function start(){ var L=window.dlog||function(){};
+    try{ Object.keys(localStorage).filter(function(k){ return /^sb-.*-auth-token/.test(k); }).forEach(function(k){ localStorage.removeItem(k); L('removed old localStorage token '+k); }); }catch(e){}
     var keys=''; try{ keys=Object.keys(tabStore===window.sessionStorage?sessionStorage:{}).filter(function(k){return /auth/.test(k);}).join(',')||'none'; }catch(e){ keys='storage blocked'; }
     L('page load: storage='+(tabStore===window.sessionStorage?'sessionStorage':'memory fallback')+', saved auth keys='+keys);
+    try{ var k0=Object.keys(sessionStorage).filter(function(k){return /auth-token/.test(k);})[0]; if(k0){ var v=JSON.parse(sessionStorage.getItem(k0)); L('saved token expires '+new Date(((v&&v.expires_at)||0)*1000).toISOString().slice(0,19)+' UTC, now '+new Date().toISOString().slice(0,19)+' UTC'); } }catch(e){ L('token read error: '+e.message); }
     var res=await sb.auth.getSession(); var session=res&&res.data&&res.data.session;
     L('session restored on load: '+(session?'yes':'no')+(res&&res.error?(' (error: '+res.error.message+')'):''));
-    if(session) await loadData(); }
+    if(session){ loading(true, session.user&&session.user.email); await loadData(); } }
   document.getElementById("agBtn").addEventListener("click", async function(){
     var email=document.getElementById("agEmail").value.trim(), pass=document.getElementById("agPass").value;
     document.getElementById("agErr").textContent="";
@@ -1387,6 +1432,9 @@ if(!window.__HOSTED__){ __boot(); }   // self-contained build boots immediately;
     if(error){ fail(error.message); return; }
     await loadData();
   });
+  document.getElementById("agDiag").addEventListener("click",function(e){ e.preventDefault(); if(window.__showDiag) window.__showDiag(); });
+  // log every auth state change (sign-in, token refresh, sign-out) so a lost session shows up in Diagnostics
+  try{ sb.auth.onAuthStateChange(function(ev,sess){ if(window.dlog) window.dlog('auth event: '+ev+(sess?(' (expires '+new Date((sess.expires_at||0)*1000).toISOString().slice(11,19)+' UTC)'):'')); }); }catch(e){}
   document.getElementById("agPass").addEventListener("keydown",function(e){ if(e.key==="Enter") document.getElementById("agBtn").click(); });
   start();
 })();
