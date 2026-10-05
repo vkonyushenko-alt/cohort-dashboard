@@ -186,7 +186,7 @@ tbody tr:hover .fz{background:#111c34}
 .foot{color:var(--faint);font-size:11px;margin-top:26px;text-align:center}
 </style></head><body><div class="wrap">
 <header class="top">
-  <div class="brand"><h1>Cohort Revenue Model <span class="v2tag">v2</span> <a class="v1link" href="../">open v1 ↗</a><span class="buildtag">build 2026-10-05 11:07 UTC</span></h1>
+  <div class="brand"><h1>Cohort Revenue Model <span class="v2tag">v2</span> <a class="v1link" href="../">open v1 ↗</a><span class="buildtag">build 2026-10-05 11:35 UTC</span></h1>
   <div class="sub"><span id="dataStamp" style="color:var(--faint)"></span><br>AI hairstyle app · Stripe + Meta · cumulative-revenue ROAS with continuation-rate forecasting</div></div>
   <div class="stat-strip" id="statStrip"></div>
 </header>
@@ -257,7 +257,7 @@ tbody tr:hover .fz{background:#111c34}
 <section class="view" data-view="audit"><div class="view-head"><h2>Audit</h2><span class="desc">Per-week reconciliation · no customer-level PII</span></div><div class="tablecard"><table id="tbl-audit"></table></div></section>
 <section class="view" data-view="methodology"><div class="doc" id="docMethodology"></div></section>
 
-<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-10-05 11:07 UTC · v2 · authenticated · data loaded from a protected backend</div>
+<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-10-05 11:35 UTC · v2 · authenticated · data loaded from a protected backend</div>
 </div>
 <script>
 /* Cohort revenue model — compute engine v3 (spec-aligned). Pure functions, no DOM. */
@@ -929,14 +929,15 @@ tbody tr:hover .fz{background:#111c34}
         const aged=mem.filter(c=>(ctx.asOf-c.subCreated)/DAY>=chargeDay(fam,r));
         const base=r===1?aged:aged.filter(c=>c.netPaidCount>=r);
         const ret=base.filter(c=>c.netPaidCount>=r+1);
-        const pending=base.filter(c=>c.netPaidCount<r+1 && (ctx.subsBy[c.id]||[]).some(s=>s.status==='past_due')).length;
+        const pendList=base.filter(c=>c.netPaidCount<r+1 && (ctx.subsBy[c.id]||[]).some(s=>s.status==='past_due')); const pending=pendList.length; const pendEst=retryEst(pendList,ctx);
         const bench={}; scs.forEach(s=>{ const b=(fcfg.benchmarks||{})[s]||fcfg.benchmark; if(!b) return;
           const s1=benchLevel(b,fam,r), s0=r===1?1:benchLevel(b,fam,r-1); bench[s]=s0>0?s1/s0:null; });
         const bv=Object.values(bench).filter(v=>v!=null); const discriminates=bv.length>1 && (Math.max.apply(null,bv)-Math.min.apply(null,bv))>0.02;
         let firstDue=null; mem.forEach(c=>{ const t=c.subCreated+chargeDay(fam,r)*DAY; if(firstDue==null||t<firstDue) firstDue=t; });
-        const obs=base.length?ret.length/base.length:null, obsHi=base.length?(ret.length+pending)/base.length:null;
+        // upper bound = paid + customers LIKELY to pay from retries (days-in-retry x decline-type model), not every retrying customer
+        const obs=base.length?ret.length/base.length:null, obsHi=base.length?(ret.length+(pendEst?pendEst.hi:pending))/base.length:null;
         let closest=null; if(obs!=null){ const mid=(obs+obsHi)/2; let best=1e9; Object.keys(bench).forEach(s=>{ const d=Math.abs(bench[s]-mid); if(d<best){best=d;closest=s;} }); }
-        steps.push({family:fcfg.key,familyLabel:fcfg.label,r,step:stepName(fam,r),n:base.length,retained:ret.length,pending,obs,obsHi,bench,discriminates,closest,firstDue});
+        steps.push({family:fcfg.key,familyLabel:fcfg.label,r,step:stepName(fam,r),n:base.length,retained:ret.length,pending,pendLikely:pendEst?Math.round(pendEst.exp):null,obs,obsHi,bench,discriminates,closest,firstDue});
       }
     });
     // overall verdict: only scenario-discriminating steps with enough sample
@@ -1172,12 +1173,12 @@ function scenarioFitPanel(sf){var sum=document.getElementById('fitSummary'),body
  if(sf.verdict){ sum.innerHTML='<b>Scenario fit:</b> real renewals so far are closest to <b>'+(SCEN_LABELS[sf.verdict]||sf.verdict)+'</b> \u25b8 details'; }
  else { sum.innerHTML='<b>Scenario fit:</b> not enough real renewal data yet to pick a scenario'+(sf.nextStep?(' \u2014 first deciding renewal ('+esc(sf.nextStep.family)+', '+esc(sf.nextStep.step)+') starts landing <b>'+d(sf.nextStep.firstDue)+'</b>'):'')+' \u25b8 details'; }
  var rows=sf.steps.map(function(st){
-  var obs=st.obs==null?'<span class="na">not reached yet</span>':(P(st.obs)+(st.pending?(' \u2013 '+P(st.obsHi)+' <span class="na">('+st.pending+' in retry)</span>'):''));
+  var obs=st.obs==null?'<span class="na">not reached yet</span>':(P(st.obs)+(st.pending?(' \u2013 '+P(st.obsHi)+' <span class="na">('+st.pending+' in retry, ~'+(st.pendLikely!=null?st.pendLikely:'?')+' likely to pay)</span>'):''));
   var bc=scs.map(function(s){var v=st.bench[s];var hit=st.discriminates&&st.obs!=null&&st.closest===s;return '<td>'+(hit?'<span class="best">'+P(v)+'</span>':P(v))+'</td>';}).join('');
   var verdict=!st.discriminates?'<span class="na">same in all scenarios</span>':(st.obs==null?'<span class="na">due from '+d(st.firstDue)+'</span>':(st.n<sf.minSample?'<span class="na">n too small</span>':(SCEN_LABELS[st.closest]||st.closest)));
   return '<tr><td class="l">'+esc(st.familyLabel)+'</td><td class="l">'+esc(st.step)+'</td><td>'+intg(st.n)+'</td><td>'+obs+'</td>'+bc+'<td class="l">'+verdict+'</td></tr>';}).join('');
- body.innerHTML='<div class="fitwrap"><table><thead><tr><th class="l">Plan</th><th class="l">Renewal step</th><th>Eligible n</th><th>Observed</th>'+scs.map(function(s){return '<th>'+(SCEN_LABELS[s]||s)+'</th>';}).join('')+'<th class="l">Closest</th></tr></thead><tbody>'+rows+'</tbody></table>'
-  +'<div class="note">Each step = share of customers who reached that renewal and paid it, among those who paid the previous one (net of refunds/disputes). Range = floor \u2192 floor + customers still in payment retry. Scenario columns are each scenario\u2019s implied step rate. Steps where all scenarios assume the same rate can\u2019t tell them apart; the verdict uses only deciding steps with n \u2265 '+sf.minSample+'. Updates automatically as renewals land.</div></div>';}
+ body.innerHTML='<div class="fitwrap"><table><thead><tr><th class="l">Plan</th><th class="l">Renewal step</th><th title="Customers who paid the previous step and have reached this renewal">Eligible n</th><th title="Of customers who paid the previous step, the share who paid this one">Observed renewal rate</th>'+scs.map(function(s){return '<th>'+(SCEN_LABELS[s]||s)+'</th>';}).join('')+'<th class="l">Closest</th></tr></thead><tbody>'+rows+'</tbody></table>'
+  +'<div class="note"><b>These are renewal rates, not shares of all customers:</b> of the customers who paid the previous step, the share who paid this one (net of refunds/disputes). Example: 68% optimistic for the 1st month renewal means 68% of customers who paid T2P renew \u2014 with T2P at ~56% that is ~38% of all customers in the cohort, which is the number the retention tab and the backtest show. Range = paid \u2192 paid + customers likely to pay from payment retries. Scenario columns are each scenario\u2019s renewal rate. Steps where all scenarios assume the same rate can\u2019t tell them apart; the verdict uses only deciding steps with n \u2265 '+sf.minSample+'. Updates automatically as renewals land.</div></div>';}
 function filterNote(){ var el=document.getElementById('filterNote'); if(!el){ el=document.createElement('div'); el.id='filterNote'; el.className='banner warn'; var tb=document.getElementById('tabbar'); tb.parentNode.insertBefore(el,tb); }
  var on=selCountries.length||selected.length; el.style.display=on?'block':'none';
  if(on) el.innerHTML='<b>Filter on:</b> '+(selCountries.length?('countries '+selCountries.join(', ')):'')+(selCountries.length&&selected.length?' \u00b7 ':'')+(selected.length?(selected.length+' campaign'+(selected.length>1?'s':'')):'')+' \u2014 tables only show weeks with customers in this selection.'; }
@@ -1313,7 +1314,7 @@ async function getSnap(id){ if(SNAPCACHE[id]) return SNAPCACHE[id]; var p=await 
 function fillHistory(){ var sel=document.getElementById('histSel'); if(!sel) return; var cur=sel.value||'live';
  var steps=SNAPS.filter(function(x){return x.kind==='step';}), weeks=SNAPS.filter(function(x){return x.kind==='weekly';}).slice().reverse();
  var o='<option value="live">Live</option>'+steps.map(function(x){ return '<option value="'+esc(x.id)+'">'+esc(x.label)+' (as of '+String(x.cutoff||'').slice(0,10)+')</option>'; }).join('');
- if(weeks.length) o+='<optgroup label="Weekly snapshots">'+weeks.map(function(x){ return '<option value="'+esc(x.id)+'">'+esc(x.label)+'</option>'; }).join('')+'</optgroup>';
+ if(weeks.length) o+='<optgroup label="Weekly snapshots of the live forecast">'+weeks.map(function(x){ var d=String(x.cutoff||x.created_at||'').slice(0,10); return '<option value="'+esc(x.id)+'">Live forecast, data through '+esc(d)+'</option>'; }).join('')+'</optgroup>';
  sel.innerHTML=o; sel.value=Array.prototype.some.call(sel.options,function(op){return op.value===cur;})?cur:'live'; }
 function archBanner(){ var el=document.getElementById('archBanner'); if(!el){ el=document.createElement('div'); el.id='archBanner'; el.className='banner archived'; var tb=document.getElementById('tabbar'); tb.parentNode.insertBefore(el,tb); }
  if(!ARCHIVE){ el.style.display='none'; return; }
@@ -1338,13 +1339,13 @@ function backtestHtml(){ var live=LIVE; if(!live||!live.retTrial) return '';
    tot.n+=n; tot.act+=c.pct*n; scs.forEach(function(s){ if(pred[s]!=null) tot.pred[s]+=pred[s]*n; }); });
   if(!rows.length){ html+='<div class="note">'+esc(sx.label)+': no cohort has reached '+ML+' yet.</div>'; return; }
   var tbest=null,tbd=1e9; scs.forEach(function(s){ var d=Math.abs(tot.pred[s]/tot.n-tot.act/tot.n); if(d<tbd){tbd=d;tbest=s;} });
-  html+='<div class="bt"><div class="bth"><b>How well did each scenario predict '+ML+'?</b> Forecast frozen '+fmtTs(snap.asOf).slice(0,10)+' vs actual now</div>'
+  html+='<div class="bt"><div class="bth"><b>How well did each scenario predict '+ML+'?</b> Share of <b>all customers in the cohort</b> still paying at '+ML+' \u2014 forecast frozen '+fmtTs(snap.asOf).slice(0,10)+' vs actual now</div>'
    +'<table><thead><tr><th class="l">Cohort</th>'+scs.map(function(s){return '<th>'+(SCEN_LABELS[s]||s)+'</th>';}).join('')+'<th>Actual</th><th>Based on</th><th class="l">Closest</th></tr></thead><tbody>'
    +rows.map(function(r){ return '<tr><td class="l">'+esc(r.label)+'</td>'+scs.map(function(s){ return '<td>'+(r.best===s?'<span class="best">'+P(r.pred[s])+'</span>':P(r.pred[s]))+'</td>'; }).join('')
      +'<td class="'+(r.state==='actual'?'actual':'set')+'">'+P(r.act)+'</td><td>'+r.n+(r.state==='partial'?' reached':'')+(r.retrying?(' \u00b7 '+r.retrying+' rt'):'')+'</td><td class="l">'+(SCEN_LABELS[r.best]||'\u2014')+'</td></tr>'; }).join('')
    +'<tr class="tot"><td class="l"><b>All</b></td>'+scs.map(function(s){ var v=tot.pred[s]/tot.n; return '<td>'+(tbest===s?'<span class="best">'+P(v)+'</span>':P(v))+'</td>'; }).join('')
      +'<td><b>'+P(tot.act/tot.n)+'</b></td><td>'+tot.n+'</td><td class="l"><b>'+(SCEN_LABELS[tbest]||'\u2014')+'</b></td></tr></tbody></table>'
-   +'<div class="note">Predicted = the frozen forecast\u2019s '+ML+' rate per cohort. Actual = paid \u00f7 customers who reached that renewal (amber = retries still open, can rise). Closest is a read on the sample so far, not a verdict while cohorts are still settling.</div></div>'; });
+   +'<div class="note">Same basis as the retention tab: share of all cohort customers (T2P \u00d7 renewal rate), so it is lower than the renewal rates in the table above. Predicted = the frozen forecast per cohort. Actual = paid \u00f7 customers who reached '+ML+' (amber = retries still open, can rise). Closest is a read on the sample so far, not a verdict while cohorts are still settling.</div></div>'; });
  return html; }
 function renderBacktest(){ var b=document.getElementById('fitBody'); if(!b) return; var old=document.getElementById('btBox'); if(old) old.remove();
  var h=backtestHtml(); if(!h) return; var d=document.createElement('div'); d.id='btBox'; d.innerHTML=h; b.appendChild(d);
@@ -1352,9 +1353,13 @@ function renderBacktest(){ var b=document.getElementById('fitBody'); if(!b) retu
 async function ensureSnapshots(){ if(ensureSnapshots.done||!window.__api||!LIVE) return; ensureSnapshots.done=true;
  try{ SNAPS=await window.__api.list(); fillHistory(); var ids={}; SNAPS.forEach(function(x){ids[x.id]=1;});
   var todo=[]; (LIVE.trialSteps||[]).forEach(function(st){ if(!st.matured) return; var id='before_trial_'+st.label; if(!ids[id]) todo.push({id:id,kind:'step',label:'Forecast before trial '+st.label+' renewal',cutoff:st.firstDue-60000}); });
-  var wk='weekly_'+isoWeek(LIVE.meta.asOf); if(!ids[wk]) todo.push({id:wk,kind:'weekly',label:'Live forecast, '+isoWeek(LIVE.meta.asOf).replace('-W',' week '),cutoff:null});
+  // weekly snapshot only when the DATA is at least 7 days newer than the last weekly snapshot (opening v2 without new exports saves nothing)
+  var dAsOf=LIVE.meta.asOf, dDay=new Date(dAsOf).toISOString().slice(0,10);
+  var lastW=0; SNAPS.forEach(function(x){ if(x.kind!=='weekly') return; var t=Date.parse(x.cutoff||x.created_at||0)||0; if(t>lastW) lastW=t; });
+  var wid='live_'+dDay;
+  if(!ids[wid] && (!lastW || dAsOf-lastW>=7*86400000-60000)) todo.push({id:wid,kind:'weekly',label:'Live forecast, data through '+dDay,cutoff:null,dataDate:dAsOf});
   for(var i=0;i<todo.length;i++){ var t=todo[i]; busy(true); await new Promise(function(r){setTimeout(r,60);});
-   var snap=Engine.snapshot(rawObj(),CONFIG,{id:t.id,kind:t.kind,label:t.label,cutoff:t.cutoff,build:'2026-10-05 11:07 UTC'}); snap.cutoff=t.cutoff; busy(false);
+   var snap=Engine.snapshot(rawObj(),CONFIG,{id:t.id,kind:t.kind,label:t.label,cutoff:t.cutoff,build:'2026-10-05 11:35 UTC'}); snap.cutoff=(t.kind==='weekly')?t.dataDate:t.cutoff; busy(false);
    var res=await window.__api.save(snap); dlog('snapshot '+t.id+': '+(res&&res.saved?'saved':'already existed')); SNAPCACHE[t.id]=snap; }
   if(todo.length){ SNAPS=await window.__api.list(); fillHistory(); }
   var steps=SNAPS.filter(function(x){return x.kind==='step';}); for(var j=0;j<steps.length;j++){ try{ await getSnap(steps[j].id); }catch(e){ dlog('load '+steps[j].id+': '+e.message); } }
@@ -1440,7 +1445,7 @@ function buildScenarioBar(){var bar=document.getElementById("scenarioBar");var s
 
 (function(){ function show(msg){ var t=document.getElementById('errToast'); if(!t){ t=document.createElement('div'); t.id='errToast'; t.className='errtoast'; document.body.appendChild(t);
   t.addEventListener('click',function(){ t.style.display='none'; }); }
-  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-05 11:07 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
+  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-05 11:35 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
  window.addEventListener('error',function(e){ show((e.message||'error')+(e.lineno?(' @'+e.lineno+':'+(e.colno||0)):'')); });
  window.addEventListener('unhandledrejection',function(e){ show('promise: '+((e.reason&&e.reason.message)||e.reason)); });
  window.__showErr=show; })();
@@ -1448,7 +1453,7 @@ var __dlog=[]; function dlog(m){ __dlog.push(new Date().toISOString().slice(11,1
 window.dlog=dlog;
 function showDiag(){ function t(f){ try{ return f(); }catch(e){ return 'ERR '+e.message; } }
  var auth=t(function(){ var ss=Object.keys(sessionStorage).filter(function(k){return /auth/.test(k);}), ls=Object.keys(localStorage).filter(function(k){return /auth/.test(k);}); return 'sessionStorage: '+(ss.join(',')||'none')+' | localStorage: '+(ls.join(',')||'none'); });
- var lines=['Build: 2026-10-05 11:07 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
+ var lines=['Build: 2026-10-05 11:35 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
   'Hosted mode: '+!!window.__HOSTED__, 'Boots: '+(window.__bootCount||0),
   'sessionStorage works: '+t(function(){ sessionStorage.setItem('__d','1'); sessionStorage.removeItem('__d'); return 'yes'; }),
   'Auth tokens: '+auth,
