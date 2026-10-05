@@ -178,7 +178,7 @@ tbody tr:hover .fz{background:#111c34}
 .foot{color:var(--faint);font-size:11px;margin-top:26px;text-align:center}
 </style></head><body><div class="wrap">
 <header class="top">
-  <div class="brand"><h1>Cohort Revenue Model<span class="buildtag">build 2026-10-05 10:16 UTC</span></h1>
+  <div class="brand"><h1>Cohort Revenue Model<span class="buildtag">build 2026-10-05 10:22 UTC</span></h1>
   <div class="sub"><span id="dataStamp" style="color:var(--faint)"></span><br>AI hairstyle app · Stripe + Meta · cumulative-revenue ROAS with continuation-rate forecasting</div></div>
   <div class="stat-strip" id="statStrip"></div>
 </header>
@@ -249,7 +249,7 @@ tbody tr:hover .fz{background:#111c34}
 <section class="view" data-view="audit"><div class="view-head"><h2>Audit</h2><span class="desc">Per-week reconciliation · no customer-level PII</span></div><div class="tablecard"><table id="tbl-audit"></table></div></section>
 <section class="view" data-view="methodology"><div class="doc" id="docMethodology"></div></section>
 
-<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-10-05 10:16 UTC · authenticated · data loaded from a protected backend</div>
+<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-10-05 10:22 UTC · authenticated · data loaded from a protected backend</div>
 </div>
 <script>
 /* Cohort revenue model — compute engine v3 (spec-aligned). Pure functions, no DOM. */
@@ -284,7 +284,10 @@ tbody tr:hover .fz{background:#111c34}
     const hl=lines[idx]; let d=opts.delim; if(!d){ const s=(hl.match(/;/g)||[]).length, c=(hl.match(/,/g)||[]).length; d=s>=c?';':','; }
     const header=tok(hl,d).map(h=>h.trim()); const rows=[];
     for(let i=idx+1;i<lines.length;i++){ if(lines[i]==='')continue; const cells=tok(lines[i],d); const o={};
-      for(let j=0;j<header.length;j++) o[header[j]]=(cells[j]!==undefined?cells[j]:'').trim(); rows.push(o);} return {header,rows}; }
+      for(let j=0;j<header.length;j++){ if(header[j] in o) continue; o[header[j]]=(cells[j]!==undefined?cells[j]:'').trim(); } rows.push(o);}
+    // duplicate column names (e.g. leftover columns from an older, wider import): the FIRST one wins
+    const seenH={}, dupHeaders=[]; header.forEach(h=>{ if(!h) return; if(seenH[h]) dupHeaders.push(h); seenH[h]=1; });
+    return {header,rows,dupHeaders}; }
   function num(v){ if(v===undefined||v===null||v==='')return 0; const n=parseFloat(String(v).replace(/[, ]/g,'')); return isNaN(n)?0:n; }
   const _dateCache=new Map();
   function parseDate(v){ if(!v)return null; const hit=_dateCache.get(v); if(hit!==undefined) return hit; const r=parseDate0(v); if(_dateCache.size>200000) _dateCache.clear(); _dateCache.set(v,r); return r; }
@@ -519,6 +522,8 @@ tbody tr:hover .fz{background:#111c34}
     if(nb) warn('bad_dates','Some dates could not be read (customers '+badDates.customers+', payments '+badDates.payments+', meta '+badDates.meta+'). Those rows are skipped, which lowers cohorts, T2P and ROAS. In the Sheet, dates should look like 2026-08-27 15:41 \u2014 re-import with "Convert text to numbers, dates, and formulas" off.');
     dataDates={ customers:latest.customers, subs:latest.subs, payments:latest.payments, meta:latest.meta, customersFrom:earliest.customers, paymentsFrom:earliest.payments, metaFrom:earliest.meta,
       rows:{customers:cu.rows.length, subs:subs.length, payments:pay.rows.length, meta:(function(){ try{ return parseCSV(raw.meta,{}).rows.length; }catch(e){ return 0; } })()}, badDates:badDates };
+    [['customers',cu],['subs',su],['payments',pay]].forEach(function(x){ const d=x[1]&&x[1].dupHeaders; if(d&&d.length)
+      warn('duplicate_columns','The '+x[0]+' tab has duplicate columns ('+d.slice(0,6).join(', ')+(d.length>6?', \u2026':'')+') \u2014 usually leftover columns from an older, wider export. The dashboard uses the first copy of each, but delete the extra columns at the right end of the tab (or clear the tab and re-import with "Replace current sheet").'); });
     if(!hasPayments) warn('no_payments','No payments export loaded — realized revenue uses customer Total Spend (net of refunds) as a proxy; transaction-level reconciliation unavailable.');
     else {
       const tsNet=elig.reduce((s,c)=>s+c.totalSpend*tsRate,0);
@@ -1337,7 +1342,7 @@ function buildScenarioBar(){var bar=document.getElementById("scenarioBar");var s
 
 (function(){ function show(msg){ var t=document.getElementById('errToast'); if(!t){ t=document.createElement('div'); t.id='errToast'; t.className='errtoast'; document.body.appendChild(t);
   t.addEventListener('click',function(){ t.style.display='none'; }); }
-  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-05 10:16 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
+  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-05 10:22 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
  window.addEventListener('error',function(e){ show((e.message||'error')+(e.lineno?(' @'+e.lineno+':'+(e.colno||0)):'')); });
  window.addEventListener('unhandledrejection',function(e){ show('promise: '+((e.reason&&e.reason.message)||e.reason)); });
  window.__showErr=show; })();
@@ -1345,7 +1350,7 @@ var __dlog=[]; function dlog(m){ __dlog.push(new Date().toISOString().slice(11,1
 window.dlog=dlog;
 function showDiag(){ function t(f){ try{ return f(); }catch(e){ return 'ERR '+e.message; } }
  var auth=t(function(){ var ss=Object.keys(sessionStorage).filter(function(k){return /auth/.test(k);}), ls=Object.keys(localStorage).filter(function(k){return /auth/.test(k);}); return 'sessionStorage: '+(ss.join(',')||'none')+' | localStorage: '+(ls.join(',')||'none'); });
- var lines=['Build: 2026-10-05 10:16 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
+ var lines=['Build: 2026-10-05 10:22 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
   'Hosted mode: '+!!window.__HOSTED__, 'Boots: '+(window.__bootCount||0),
   'sessionStorage works: '+t(function(){ sessionStorage.setItem('__d','1'); sessionStorage.removeItem('__d'); return 'yes'; }),
   'Auth tokens: '+auth,
