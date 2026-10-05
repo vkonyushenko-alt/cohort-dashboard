@@ -131,6 +131,9 @@ nav.tabs button.active{color:#eaf6ff;background:var(--panel2);border-color:var(-
 .matr{color:#9fb3d9;font-size:10px;margin-top:1px}
 .legendbar{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;margin:10px 0 0;font-size:11.5px;color:var(--muted)}
 .legendbar b{color:#eaf6ff}.legendbar .lg-set{color:var(--warn);font-style:italic}.legendbar .lg-proj{color:var(--muted);font-style:italic}
+.offtag{display:inline-block;margin-left:6px;font-size:9.5px;color:#9aa6bd;background:#1a2133;border:1px solid #2a3550;border-radius:5px;padding:1px 6px;vertical-align:middle;cursor:help;font-weight:500}
+.offtag.none{color:#c9a96b;border-color:#4a3d1e;background:#2a2413}
+tr.inactive .coh{color:var(--muted)}
 .rt{color:var(--warn);font-size:9.5px}
 .thsub{display:block;font-size:9px;color:var(--faint);font-weight:500;letter-spacing:0;text-transform:none;margin-top:1px}
 .bd-tools{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin:10px 0 4px;padding:10px 12px;background:var(--panel);border:1px solid var(--line);border-radius:11px}
@@ -186,7 +189,7 @@ tbody tr:hover .fz{background:#111c34}
 .foot{color:var(--faint);font-size:11px;margin-top:26px;text-align:center}
 </style></head><body><div class="wrap">
 <header class="top">
-  <div class="brand"><h1>Cohort Revenue Model <span class="v2tag">v2</span> <a class="v1link" href="../">open v1 ↗</a><span class="buildtag">build 2026-10-05 11:35 UTC</span></h1>
+  <div class="brand"><h1>Cohort Revenue Model <span class="v2tag">v2</span> <a class="v1link" href="../">open v1 ↗</a><span class="buildtag">build 2026-10-05 11:43 UTC</span></h1>
   <div class="sub"><span id="dataStamp" style="color:var(--faint)"></span><br>AI hairstyle app · Stripe + Meta · cumulative-revenue ROAS with continuation-rate forecasting</div></div>
   <div class="stat-strip" id="statStrip"></div>
 </header>
@@ -236,6 +239,7 @@ tbody tr:hover .fz{background:#111c34}
 <section class="view" data-view="byCampaign"><div class="view-head"><h2>Total — by campaign</h2><span class="desc">utm_campaign · Meta spend joined · pick a week to compare campaigns side by side, or a campaign + "by week" to see its trend</span></div>
 <div class="bd-tools">
  <label class="toggle"><input type="checkbox" id="campWeekly"> by week</label>
+ <label class="toggle" title="Hide campaigns with no Meta spend in the last 3 days of data"><input type="checkbox" id="campHideOff"> hide turned-off</label>
  <label>week <select id="campWeek"><option value="all">all weeks</option></select></label>
  <label>campaign <select id="campOnly"><option value="all">all campaigns</option></select></label>
  <label class="grow"><input type="search" id="campSearchTxt" placeholder="search campaign…"></label>
@@ -246,6 +250,7 @@ tbody tr:hover .fz{background:#111c34}
 <div class="bd-tools">
  <label class="toggle"><input type="checkbox" id="adGroupName"> group by ad name</label>
  <label class="toggle"><input type="checkbox" id="adWeekly"> by week</label>
+ <label class="toggle" title="Hide ads with no Meta spend in the last 3 days of data"><input type="checkbox" id="adHideOff"> hide turned-off</label>
  <label>week <select id="adWeek"><option value="all">all weeks</option></select></label>
  <label>campaign <select id="adCamp"><option value="all">all campaigns</option></select></label>
  <label class="grow"><input type="search" id="adSearch" placeholder="search ad name or ID…"></label>
@@ -257,7 +262,7 @@ tbody tr:hover .fz{background:#111c34}
 <section class="view" data-view="audit"><div class="view-head"><h2>Audit</h2><span class="desc">Per-week reconciliation · no customer-level PII</span></div><div class="tablecard"><table id="tbl-audit"></table></div></section>
 <section class="view" data-view="methodology"><div class="doc" id="docMethodology"></div></section>
 
-<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-10-05 11:35 UTC · v2 · authenticated · data loaded from a protected backend</div>
+<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-10-05 11:43 UTC · v2 · authenticated · data loaded from a protected backend</div>
 </div>
 <script>
 /* Cohort revenue model — compute engine v3 (spec-aligned). Pure functions, no DOM. */
@@ -562,7 +567,7 @@ tbody tr:hover .fz{background:#111c34}
     // Meta spend can only be split by country if the Meta export has a Country column; otherwise blank it while filtering
     if(countryOn){
       if(spend.hasCountry){ const sp2=buildSpend(raw.meta, aliases, toCur, warn, selectedCountries, cut); Object.assign(spend, sp2); }
-      else { ['byWeek','byMonth','byCampaign','byCampaignWeek','statCampaign','statCampaignWeek','statWeek','statMonth'].forEach(k=>spend[k]={}); spend.total=0; spend.cpm=null; spend.cpc=null; spend.ctr=null; spend.countryBlanked=true; }
+      else { ['byWeek','byMonth','byCampaign','byCampaignWeek','statCampaign','statCampaignWeek','statWeek','statMonth','lastCampaign'].forEach(k=>spend[k]={}); spend.total=0; spend.cpm=null; spend.cpc=null; spend.ctr=null; spend.countryBlanked=true; }
       if(adSpend.hasCountry){ Object.assign(adSpend, buildAdSpend(raw.metaAds, toCur, selectedCountries, cut)); }
       // billing country (customers) vs ad-delivery country (Meta): customers whose campaign had no spend in their country
       if(spend.hasCountry){ const md=parseCSV(raw.meta,{}); const cc=md.header.find(x=>/^country$/i.test(x.trim()));
@@ -570,7 +575,7 @@ tbody tr:hover .fz{background:#111c34}
         const has={}; md.rows.forEach(r=>{ if(num(r[cs])>0){ const c0=(r[cn]||'').trim(); has[(aliases[c0]||c0)+'|'+(r[cc]||'').trim().toUpperCase()]=1; } });
         const miss=filtered.filter(c=>!has[(aliases[c.utm_campaign]||c.utm_campaign)+'|'+c.country]).length;
         spend.countryMismatch={n:miss,total:filtered.length}; }
-      else { ['byId','byIdWeek','byName','byNameWeek','statId','statIdWeek','statName','statNameWeek'].forEach(k=>adSpend[k]={}); adSpend.countryBlanked=true; }
+      else { ['byId','byIdWeek','byName','byNameWeek','statId','statIdWeek','statName','statNameWeek','lastId','lastName'].forEach(k=>adSpend[k]={}); adSpend.countryBlanked=true; }
     }
 
     // family-wide continuation rates (Methodology 1): observed step-down rate for each renewal, from fully-closed cohorts (>=minCohort)
@@ -593,7 +598,7 @@ tbody tr:hover .fz{background:#111c34}
   function addStat(o,k,sp,imp,clk){ const x=o[k]||(o[k]={spend:0,imp:0,clk:0}); x.spend+=sp; x.imp+=imp; x.clk+=clk; }
   function addStatW(o,k,w,sp,imp,clk){ const m=o[k]||(o[k]={}); addStat(m,w,sp,imp,clk); }
   function buildSpend(metaRaw, aliases, toCur, warn, countries, cut){
-    const out={mode:'none',total:0,clicks:0,impressions:0,byWeek:{},byMonth:{},byCampaign:{},byCampaignWeek:{},statCampaign:{},statCampaignWeek:{},statWeek:{},statMonth:{},
+    const out={mode:'none',total:0,clicks:0,impressions:0,byWeek:{},byMonth:{},byCampaign:{},byCampaignWeek:{},statCampaign:{},statCampaignWeek:{},statWeek:{},statMonth:{},lastCampaign:{},lastDay:0,
       hasSpend:false,unmatched:[],aliasApplied:[],currency:'USD',ctr:null,cpc:null,cpm:null};
     if(!metaRaw||!String(metaRaw).trim()) return out;
     const md=parseCSV(metaRaw,{}); const cols=md.header;
@@ -614,6 +619,7 @@ tbody tr:hover .fz{background:#111c34}
       const sp=toCur(num(r[cSpend]),'usd'); const imp=num(r[cImp]); const clk=rowClicks(r,cClick,cCtr,cCpc,cImp,cSpend);
       out.total+=sp; out.clicks+=clk; out.impressions+=imp;
       out.byCampaign[camp]=(out.byCampaign[camp]||0)+sp; addStat(out.statCampaign,camp,sp,imp,clk);
+      if(s!=null){ if(s>out.lastDay) out.lastDay=s; if(sp>0 && (!out.lastCampaign[camp]||s>out.lastCampaign[camp])) out.lastCampaign[camp]=s; }
       if(s!=null){ const w=weekStart(s),m=monthStart(s); out.byWeek[w]=(out.byWeek[w]||0)+sp; out.byMonth[m]=(out.byMonth[m]||0)+sp; addStat(out.statWeek,w,sp,imp,clk); addStat(out.statMonth,m,sp,imp,clk);
         (out.byCampaignWeek[camp]=out.byCampaignWeek[camp]||{}); out.byCampaignWeek[camp][w]=(out.byCampaignWeek[camp][w]||0)+sp; addStatW(out.statCampaignWeek,camp,w,sp,imp,clk); } });
     out.hasSpend=md.rows.length>0; out.mode=out.hasSpend?(daily?'daily':'window'):'none';
@@ -624,7 +630,7 @@ tbody tr:hover .fz{background:#111c34}
   }
   // ad-level Meta export keyed by Ad ID and/or Ad name (joins to customer utm_term)
   function buildAdSpend(metaRaw, toCur, countries, cut){
-    const out={byId:{},byIdWeek:{},byName:{},byNameWeek:{},statId:{},statIdWeek:{},statName:{},statNameWeek:{},total:0,hasData:false};
+    const out={byId:{},byIdWeek:{},byName:{},byNameWeek:{},statId:{},statIdWeek:{},statName:{},statNameWeek:{},lastId:{},lastName:{},lastDay:0,total:0,hasData:false};
     if(!metaRaw||!String(metaRaw).trim()) return out;
     const md=parseCSV(metaRaw,{}); const cols=md.header;
     const pick=arr=>{ for(const c of arr){ const h=cols.find(x=>x.toLowerCase().includes(c)); if(h)return h;} };
@@ -638,6 +644,7 @@ tbody tr:hover .fz{background:#111c34}
       const id=cId?(r[cId]||'').trim():''; const nm=cName?(r[cName]||'').trim():'';
       const imp=num(r[cImp]); const clk=rowClicks(r,cClick,cCtr,cCpc,cImp,cSpend);
       if(id){ addStat(out.statId,id,sp,imp,clk); if(w!=null) addStatW(out.statIdWeek,id,w,sp,imp,clk); }
+      if(d!=null){ if(d>out.lastDay) out.lastDay=d; if(sp>0){ if(id&&(!out.lastId[id]||d>out.lastId[id])) out.lastId[id]=d; if(nm&&(!out.lastName[nm]||d>out.lastName[nm])) out.lastName[nm]=d; } }
       if(nm){ addStat(out.statName,nm,sp,imp,clk); if(w!=null) addStatW(out.statNameWeek,nm,w,sp,imp,clk); }
       if(id){ out.byId[id]=(out.byId[id]||0)+sp; if(w!=null){(out.byIdWeek[id]=out.byIdWeek[id]||{}); out.byIdWeek[id][w]=(out.byIdWeek[id][w]||0)+sp;} }
       if(nm){ out.byName[nm]=(out.byName[nm]||0)+sp; if(w!=null){(out.byNameWeek[nm]=out.byNameWeek[nm]||{}); out.byNameWeek[nm][w]=(out.byNameWeek[nm][w]||0)+sp;} }
@@ -864,6 +871,9 @@ tbody tr:hover .fz{background:#111c34}
         stat = byN ? sN : sI; }
       const row=metricRow(weekly?(label+'  ·  '+weekLabelClamped(wk,ctx.startMs)):label, mem, ctx, cfg, spend, null, {anchored:true});
       row.campaign=raw; row.weekKey=wk; attachStats(row,stat);
+      const offDays=cfg.offDays||3;
+      if(field==='utm_campaign') activity(row, ctx.spend.lastCampaign[raw], ctx.spend.lastDay, offDays);
+      else if(field==='utm_term'){ const id2=adIdOf(raw), nm2=raw.replace(/_(\d{6,})$/,''); activity(row, (id2&&ctx.adSpend.lastId[id2])||ctx.adSpend.lastName[nm2], ctx.adSpend.lastDay||ctx.spend.lastDay, offDays); }
       row.weekLabel = wk!=null ? weekLabelClamped(wk,ctx.startMs) : null;
       if(field==='utm_campaign'){ row.campaignName=raw; }
       else if(field==='utm_term'){ row.adId=adIdOf(raw)||''; row.adName=raw.replace(/_(\d{6,})$/,'');
@@ -873,6 +883,9 @@ tbody tr:hover .fz{background:#111c34}
       return row; });
   }
 
+  function activity(row,last,metaLast,days){ row.lastSpend=last||null; row.metaLast=metaLast||null;
+    if(!metaLast){ row.activeState=null; return; } if(!last){ row.activeState='nospend'; return; }
+    row.activeState=(metaLast-last>(days||3)*DAY-1)?'off':'active'; }
   function attachStats(row,stat){ row.impressions=stat?stat.imp:null; row.clicks=stat?stat.clk:null;
     row.ctr=(stat&&stat.imp)?stat.clk/stat.imp:null; row.cpc=(stat&&stat.clk)?stat.spend/stat.clk:null; row.cpm=(stat&&stat.imp)?stat.spend/stat.imp*1000:null; row.pcvr=(stat&&stat.clk&&row.New!=null)?row.New/stat.clk:null; }
   function adNameBreakdown(ctx, cfg){
@@ -883,6 +896,8 @@ tbody tr:hover .fz{background:#111c34}
     return keys.map(name=>{ const grp=g[name]; let spend=ctx.adSpend.byName[name]||0; let stat=ctx.adSpend.statName[name]||null;
       if(!spend){ stat={spend:0,imp:0,clk:0}; Object.keys(grp.ids).forEach(id=>{ spend+=(ctx.adSpend.byId[id]||0); const x=ctx.adSpend.statId[id]; if(x){stat.spend+=x.spend;stat.imp+=x.imp;stat.clk+=x.clk;} }); }
       const row=metricRow(name, grp.mem, ctx, cfg, spend, null, {anchored:true}); row.adCount=Object.keys(grp.ids).length; attachStats(row,stat);
+      let lastN=ctx.adSpend.lastName[name]||0; Object.keys(grp.ids).forEach(id=>{ const t=ctx.adSpend.lastId[id]; if(t&&t>lastN) lastN=t; });
+      activity(row, lastN||null, ctx.adSpend.lastDay||ctx.spend.lastDay, cfg.offDays||3);
       row.adName=name; row.baseLabel=name; row.adId=Object.keys(grp.ids).length+' ad IDs';
       const cc={}; grp.mem.forEach(c=>{ const k=c.utm_campaign||'(none)'; cc[k]=(cc[k]||0)+1; });
       const cks=Object.keys(cc).sort((a,b)=>cc[b]-cc[a]); row.campaignName=cks.length>1?(cks[0]+' +'+(cks.length-1)):(cks[0]||'');
@@ -1097,7 +1112,11 @@ function cohortTable(id,rows,firstHead,showSplit,showLTV,extra){
  var body='<tbody>'+rows.map(function(r){
   var tag=r.open?'<span class="open-tag">OPEN</span>':'';
   var lab=extra.useBase?(r.baseLabel||r.label):r.label;
-  var s='<tr><td class="l fz c1"><span class="coh" title="'+esc(lab)+'">'+esc(lab)+'</span>'+tag+'</td>'
+  var stTag='';
+  if(extra.useBase && r.activeState==='off'){ var ld=new Date(r.lastSpend).toISOString().slice(5,10).replace('-','/');
+    stTag=' <span class="offtag" data-tip="No Meta spend since '+new Date(r.lastSpend).toISOString().slice(0,10)+' (data through '+new Date(r.metaLast).toISOString().slice(0,10)+') \u2014 likely turned off. Its customers keep renewing, so revenue and retention still update.">off since '+ld+'</span>'; }
+  else if(extra.useBase && r.activeState==='nospend') stTag=' <span class="offtag none" data-tip="No Meta spend found for this name \u2014 e.g. a tag that doesn\u2019t match a Meta campaign/ad, or an unfilled UTM placeholder.">no Meta spend</span>';
+  var s='<tr'+(extra.useBase&&r.activeState&&r.activeState!=='active'?' class="inactive"':'')+'><td class="l fz c1"><span class="coh" title="'+esc(lab)+'">'+esc(lab)+'</span>'+tag+stTag+'</td>'
    +(extra.week?'<td class="l">'+esc(r.weekLabel||'—')+'</td>':'')
    +(extra.adId?'<td class="l mono">'+esc(r.adId||'—')+'</td>':'')
    +(extra.campaign?'<td class="l camp" title="'+esc(r.campaignName)+'">'+esc(r.campaignName||'—')+'</td>':'');
@@ -1260,8 +1279,9 @@ function fillSelect(id,opts,allLabel){var el=document.getElementById(id);var cur
  var sig=opts.map(function(o){return o.v;}).join('|'); if(el.getAttribute('data-sig')===sig) return;
  el.innerHTML='<option value="all">'+allLabel+'</option>'+opts.map(function(o){return '<option value="'+esc(o.v)+'">'+esc(o.t)+'</option>';}).join('');
  el.setAttribute('data-sig',sig); el.value=opts.some(function(o){return String(o.v)===cur;})?cur:'all';}
-function bdFilter(rows,week,camp,q){q=(q||'').toLowerCase().trim();
+function bdFilter(rows,week,camp,q,hideOff){q=(q||'').toLowerCase().trim();
  return rows.filter(function(r){
+  if(hideOff && r.activeState && r.activeState!=='active') return false;
   if(week!=='all' && String(r.weekKey)!==String(week)) return false;
   if(camp!=='all'){ var cn=r.campaignName||''; if(!(cn===camp || r.campaign===camp || cn.indexOf(camp+' +')===0)) return false; }
   if(q){var hay=((r.baseLabel||r.label)+' '+(r.adId||'')+' '+(r.campaignName||'')+' '+(r.campaign||'')).toLowerCase(); if(hay.indexOf(q)<0) return false;}
@@ -1277,9 +1297,10 @@ function renderBreakdowns(){ if(!result) return;
  var cWeek=document.getElementById('campWeek').value, cCamp=document.getElementById('campOnly').value;
  var cw=document.getElementById('campWeekly').checked || cWeek!=='all';
  var cSort=document.getElementById('campSort').value; if(cSort==='def'&&cw) cSort=(cWeek!=='all'?'spend':(cCamp!=='all'?'campweek':'weekcamp'));
- var cRows=bdFilter(cw?result.byCampaignWeekly:result.byCampaign,cWeek,cCamp,document.getElementById('campSearchTxt').value);
+ var cRows=bdFilter(cw?result.byCampaignWeekly:result.byCampaign,cWeek,cCamp,document.getElementById('campSearchTxt').value,document.getElementById('campHideOff').checked);
  cRows=bdSort(cRows,cSort);
- document.getElementById('campCount').textContent=cRows.length+' row'+(cRows.length===1?'':'s');
+ var cOff=(cw?result.byCampaignWeekly:result.byCampaign).filter(function(r){return r.activeState==='off';}).map(function(r){return r.campaign;}).filter(function(v,i,a){return a.indexOf(v)===i;}).length;
+ document.getElementById('campCount').textContent=cRows.length+' row'+(cRows.length===1?'':'s')+(cOff?(' \u00b7 '+cOff+' campaign'+(cOff>1?'s':'')+' turned off'):'');
  if(cRows.length) cohortTable('tbl-byCampaign',cRows,'Campaign',true,true,{useBase:true,week:cw}); else emptyRow('tbl-byCampaign',(window.__V2&&ARCHIVE)?'Campaign breakdowns are not stored in archived forecasts \u2014 switch History to Live.':'No campaigns match these filters.');
  // ---- ads ----
  var byName=document.getElementById('adGroupName').checked;
@@ -1288,7 +1309,7 @@ function renderBreakdowns(){ if(!result) return;
  document.getElementById('adWeekly').disabled=byName; document.getElementById('adWeek').disabled=byName;
  var src=byName?result.byAdName:(aw?result.byTermWeekly:result.byTerm);
  var aSort=document.getElementById('adSort').value; if(aSort==='def'&&aw) aSort=(aWeek!=='all'?'spend':'adweek');
- var aRows=bdSort(bdFilter(src,byName?'all':aWeek,aCamp,document.getElementById('adSearch').value),aSort);
+ var aRows=bdSort(bdFilter(src,byName?'all':aWeek,aCamp,document.getElementById('adSearch').value,document.getElementById('adHideOff').checked),aSort);
  document.getElementById('adCount').textContent=aRows.length+' row'+(aRows.length===1?'':'s');
  if(aRows.length) cohortTable('tbl-byTerm',aRows,byName?'Ad name':'Ad',true,true,{useBase:true,adId:true,campaign:true,week:aw}); else emptyRow('tbl-byTerm',(window.__V2&&ARCHIVE)?'Ad breakdowns are not stored in archived forecasts \u2014 switch History to Live.':'No ads match these filters.');
 }
@@ -1359,7 +1380,7 @@ async function ensureSnapshots(){ if(ensureSnapshots.done||!window.__api||!LIVE)
   var wid='live_'+dDay;
   if(!ids[wid] && (!lastW || dAsOf-lastW>=7*86400000-60000)) todo.push({id:wid,kind:'weekly',label:'Live forecast, data through '+dDay,cutoff:null,dataDate:dAsOf});
   for(var i=0;i<todo.length;i++){ var t=todo[i]; busy(true); await new Promise(function(r){setTimeout(r,60);});
-   var snap=Engine.snapshot(rawObj(),CONFIG,{id:t.id,kind:t.kind,label:t.label,cutoff:t.cutoff,build:'2026-10-05 11:35 UTC'}); snap.cutoff=(t.kind==='weekly')?t.dataDate:t.cutoff; busy(false);
+   var snap=Engine.snapshot(rawObj(),CONFIG,{id:t.id,kind:t.kind,label:t.label,cutoff:t.cutoff,build:'2026-10-05 11:43 UTC'}); snap.cutoff=(t.kind==='weekly')?t.dataDate:t.cutoff; busy(false);
    var res=await window.__api.save(snap); dlog('snapshot '+t.id+': '+(res&&res.saved?'saved':'already existed')); SNAPCACHE[t.id]=snap; }
   if(todo.length){ SNAPS=await window.__api.list(); fillHistory(); }
   var steps=SNAPS.filter(function(x){return x.kind==='step';}); for(var j=0;j<steps.length;j++){ try{ await getSnap(steps[j].id); }catch(e){ dlog('load '+steps[j].id+': '+e.message); } }
@@ -1421,7 +1442,7 @@ function wireCamp(){var f=document.getElementById("campFilter");
  document.getElementById("campNone").addEventListener("click",function(){Array.prototype.forEach.call(document.querySelectorAll('#campOpts input'),function(i){i.checked=false;});});
  document.getElementById("campApply").addEventListener("click",function(){var s=selectedFromMenu();selected=(s.length===allCampaigns.length)?[]:s;campLabel();f.open=false;dlog('campaigns applied: '+(selected.length||'all'));scheduleRender();});
  document.addEventListener("click",function(e){if(f.open&&!f.contains(e.target))f.open=false;});
- ["campWeekly","campWeek","campOnly","campSort","adGroupName","adWeekly","adWeek","adCamp","adSort"].forEach(function(id){document.getElementById(id).addEventListener("change",renderBreakdowns);});
+ ["campWeekly","campWeek","campOnly","campSort","adGroupName","adWeekly","adWeek","adCamp","adSort","campHideOff","adHideOff"].forEach(function(id){document.getElementById(id).addEventListener("change",renderBreakdowns);});
  ["campSearchTxt","adSearch"].forEach(function(id){document.getElementById(id).addEventListener("input",renderBreakdowns);});}
 
 function buildUploader(){var grid=document.getElementById("upGrid");
@@ -1445,7 +1466,7 @@ function buildScenarioBar(){var bar=document.getElementById("scenarioBar");var s
 
 (function(){ function show(msg){ var t=document.getElementById('errToast'); if(!t){ t=document.createElement('div'); t.id='errToast'; t.className='errtoast'; document.body.appendChild(t);
   t.addEventListener('click',function(){ t.style.display='none'; }); }
-  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-05 11:35 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
+  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-05 11:43 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
  window.addEventListener('error',function(e){ show((e.message||'error')+(e.lineno?(' @'+e.lineno+':'+(e.colno||0)):'')); });
  window.addEventListener('unhandledrejection',function(e){ show('promise: '+((e.reason&&e.reason.message)||e.reason)); });
  window.__showErr=show; })();
@@ -1453,7 +1474,7 @@ var __dlog=[]; function dlog(m){ __dlog.push(new Date().toISOString().slice(11,1
 window.dlog=dlog;
 function showDiag(){ function t(f){ try{ return f(); }catch(e){ return 'ERR '+e.message; } }
  var auth=t(function(){ var ss=Object.keys(sessionStorage).filter(function(k){return /auth/.test(k);}), ls=Object.keys(localStorage).filter(function(k){return /auth/.test(k);}); return 'sessionStorage: '+(ss.join(',')||'none')+' | localStorage: '+(ls.join(',')||'none'); });
- var lines=['Build: 2026-10-05 11:35 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
+ var lines=['Build: 2026-10-05 11:43 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
   'Hosted mode: '+!!window.__HOSTED__, 'Boots: '+(window.__bootCount||0),
   'sessionStorage works: '+t(function(){ sessionStorage.setItem('__d','1'); sessionStorage.removeItem('__d'); return 'yes'; }),
   'Auth tokens: '+auth,
