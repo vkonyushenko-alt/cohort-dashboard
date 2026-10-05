@@ -178,7 +178,7 @@ tbody tr:hover .fz{background:#111c34}
 .foot{color:var(--faint);font-size:11px;margin-top:26px;text-align:center}
 </style></head><body><div class="wrap">
 <header class="top">
-  <div class="brand"><h1>Cohort Revenue Model<span class="buildtag">build 2026-10-05 10:05 UTC</span></h1>
+  <div class="brand"><h1>Cohort Revenue Model<span class="buildtag">build 2026-10-05 10:16 UTC</span></h1>
   <div class="sub"><span id="dataStamp" style="color:var(--faint)"></span><br>AI hairstyle app · Stripe + Meta · cumulative-revenue ROAS with continuation-rate forecasting</div></div>
   <div class="stat-strip" id="statStrip"></div>
 </header>
@@ -249,7 +249,7 @@ tbody tr:hover .fz{background:#111c34}
 <section class="view" data-view="audit"><div class="view-head"><h2>Audit</h2><span class="desc">Per-week reconciliation · no customer-level PII</span></div><div class="tablecard"><table id="tbl-audit"></table></div></section>
 <section class="view" data-view="methodology"><div class="doc" id="docMethodology"></div></section>
 
-<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-10-05 10:05 UTC · authenticated · data loaded from a protected backend</div>
+<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-10-05 10:16 UTC · authenticated · data loaded from a protected backend</div>
 </div>
 <script>
 /* Cohort revenue model — compute engine v3 (spec-aligned). Pure functions, no DOM. */
@@ -391,6 +391,13 @@ tbody tr:hover .fz{background:#111c34}
       if(!c.eligible) excluded.push(c);
     });
     const elig=customers.filter(c=>c.eligible);
+    // why customers are excluded (shown in Diagnostics so a Sheet problem is easy to spot)
+    const why={ rows:cu.rows.length, noIdOrDate:0, duplicate:dupes, noFunnel:0, zeroPayments:0, beforeStart:0, excludedList:0, eligible:elig.length };
+    cu.rows.forEach(r=>{ if(!r['id']||parseDate(r['Created (UTC)'])==null) why.noIdOrDate++; });
+    customers.forEach(c=>{ if(c.eligible) return; if(isBlankFunnel(c.ff_funnel)) why.noFunnel++; else if(!(c.paymentCount>0)) why.zeroPayments++; else if(c.created<startMs) why.beforeStart++; else why.excludedList++; });
+    const needCols=['id','Created (UTC)','Payment Count','Total Spend','ff_funnel (metadata)','utm_campaign (metadata)','Address Country'];
+    why.missingCols=needCols.filter(h=>cu.header.indexOf(h)<0);
+    why.headerCount=cu.header.length;
 
     // payments (transaction-level) — source of truth for revenue when present
     const pay=parseCSV(raw.payments,{skipTitle:true,delim:';'});
@@ -491,12 +498,13 @@ tbody tr:hover .fz{background:#111c34}
       if(ids.length>=5 && rounded/ids.length>0.5) warn('meta_ids_rounded','Most Meta Ad IDs end in 0000 or are in scientific notation \u2014 they were likely rounded by Google Sheets, so ads can\u2019t be matched to their spend. Re-import the meta tab with "Convert text to numbers, dates, and formulas" turned OFF.'); }
     if(countrySource && spend.hasSpend && !spend.hasCountry) warn('meta_no_country','The Meta export has no Country column, so Spend / CPA / ROAS are hidden when a country filter is on. Re-export Meta with Breakdown \u2192 Country.');
     // freshness: every tab should come from the same export date; an older payments tab silently lowers T2P / renewals
-    const latest={ customers:0, subs:0, payments:0, meta:0 };
-    customers.forEach(c=>{ if(c.created>latest.customers) latest.customers=c.created; });
+    const latest={ customers:0, subs:0, payments:0, meta:0 }; const earliest={ customers:0, payments:0, meta:0 }; const badDates={ customers:0, payments:0, meta:0 };
+    customers.forEach(c=>{ if(c.created>latest.customers) latest.customers=c.created; if(!earliest.customers||c.created<earliest.customers) earliest.customers=c.created; });
     subs.forEach(x=>{ if(x.created&&x.created>latest.subs) latest.subs=x.created; });
-    pay.rows.forEach(r=>{ const d=parseDate(r['Created date (UTC)']||r['Created (UTC)']); if(d&&d>latest.payments) latest.payments=d; });
+    pay.rows.forEach(r=>{ const raw0=r['Created date (UTC)']||r['Created (UTC)']; const d=parseDate(raw0); if(!d&&raw0) badDates.payments++; if(d&&d>latest.payments) latest.payments=d; if(d&&(!earliest.payments||d<earliest.payments)) earliest.payments=d; });
     Object.keys(spend.byWeek||{}).length; (function(){ try{ const md=parseCSV(raw.meta,{}); const cd=md.header.find(x=>/^day$|reporting starts/i.test(x.trim()));
-      if(cd) md.rows.forEach(r=>{ const d=parseDate(r[cd]); if(d&&d>latest.meta) latest.meta=d; }); }catch(e){} })();
+      if(cd) md.rows.forEach(r=>{ const d=parseDate(r[cd]); if(!d&&r[cd]) badDates.meta++; if(d&&d>latest.meta) latest.meta=d; if(d&&(!earliest.meta||d<earliest.meta)) earliest.meta=d; }); }catch(e){} })();
+    cu.rows.forEach(r=>{ const v=r['Created (UTC)']; if(v && parseDate(v)==null) badDates.customers++; });
     const ref=Math.max(latest.customers,latest.subs);
     const ds=x=>x?new Date(x).toISOString().slice(0,10):'—';
     if(hasPayments && latest.payments && ref-latest.payments>1.5*DAY)
@@ -505,7 +513,12 @@ tbody tr:hover .fz{background:#111c34}
       warn('stale_meta','The meta tab is older than customers (Meta through '+ds(latest.meta)+', customers through '+ds(ref)+'). Spend for recent days is missing, so CPA/ROAS for recent weeks will look too good. Re-import the latest Meta export.');
     if(latest.customers && latest.subs && Math.abs(latest.customers-latest.subs)>1.5*DAY)
       warn('stale_subs','Customers and subscriptions exports are from different dates (customers through '+ds(latest.customers)+', subscriptions through '+ds(latest.subs)+'). Re-export both together.');
-    dataDates={ customers:latest.customers, subs:latest.subs, payments:latest.payments, meta:latest.meta };
+    if(earliest.customers && earliest.customers-startMs>2*DAY)
+      warn('customers_start_late','The customers tab starts on '+ds(earliest.customers)+', but the dashboard starts on '+ds(startMs)+'. Customers from '+ds(startMs)+' to '+ds(earliest.customers-DAY)+' are missing, so the earliest cohorts are missing too. Export customers from '+ds(startMs)+' and re-import the whole file (Stripe lists the oldest customers at the bottom).');
+    const nb=badDates.customers+badDates.payments+badDates.meta;
+    if(nb) warn('bad_dates','Some dates could not be read (customers '+badDates.customers+', payments '+badDates.payments+', meta '+badDates.meta+'). Those rows are skipped, which lowers cohorts, T2P and ROAS. In the Sheet, dates should look like 2026-08-27 15:41 \u2014 re-import with "Convert text to numbers, dates, and formulas" off.');
+    dataDates={ customers:latest.customers, subs:latest.subs, payments:latest.payments, meta:latest.meta, customersFrom:earliest.customers, paymentsFrom:earliest.payments, metaFrom:earliest.meta,
+      rows:{customers:cu.rows.length, subs:subs.length, payments:pay.rows.length, meta:(function(){ try{ return parseCSV(raw.meta,{}).rows.length; }catch(e){ return 0; } })()}, badDates:badDates };
     if(!hasPayments) warn('no_payments','No payments export loaded — realized revenue uses customer Total Spend (net of refunds) as a proxy; transaction-level reconciliation unavailable.');
     else {
       const tsNet=elig.reduce((s,c)=>s+c.totalSpend*tsRate,0);
@@ -548,7 +561,7 @@ tbody tr:hover .fz{background:#111c34}
     cfg.families.forEach(f=>{ const fm=filtered.filter(c=>c.starter&&c.starter.key===f.key);
       famCont[f.key]=continuationRates(fm, f, asOf, cfg.historicalMinCohort||15); });
 
-    return { prices, subs, subsBy, customers, elig, filtered, excluded, spend, adSpend, hasPayments, payRows, toCur, cur, asOf, startMs,
+    return { eligWhy:why, prices, subs, subsBy, customers, elig, filtered, excluded, spend, adSpend, hasPayments, payRows, toCur, cur, asOf, startMs,
       haircutMult, net, gross, dq, aliases, famCont, failedBy, countrySource, countryOn, retryP, retryModel, dataDates };
   }
 
@@ -960,7 +973,7 @@ tbody tr:hover .fz{background:#111c34}
         hasSpend:ctx.spend.hasSpend, spendMode:ctx.spend.mode, spendTotal:ctx.spend.total,
         spendCurrency:ctx.spend.currency, clicks:ctx.spend.clicks, impressions:ctx.spend.impressions,
         ctr:ctx.spend.ctr, cpc:ctx.spend.cpc, cpm:ctx.spend.cpm,
-        dataDates:ctx.dataDates, countrySource:ctx.countrySource, countryOn:ctx.countryOn, spendHasCountry:!!ctx.spend.hasCountry, countryMismatch:ctx.spend.countryMismatch||null, clicksDerived:!!ctx.spend.clicksDerived, retryModel:ctx.retryModel, spendCountryBlanked:!!ctx.spend.countryBlanked,
+        eligWhy:ctx.eligWhy, dataDates:ctx.dataDates, countrySource:ctx.countrySource, countryOn:ctx.countryOn, spendHasCountry:!!ctx.spend.hasCountry, countryMismatch:ctx.spend.countryMismatch||null, clicksDerived:!!ctx.spend.clicksDerived, retryModel:ctx.retryModel, spendCountryBlanked:!!ctx.spend.countryBlanked,
         aliasApplied:ctx.spend.aliasApplied, unmatched:ctx.spend.unmatched, dq:ctx.dq },
       families: scfg.families.map(f=>({key:f.key,label:f.label,shortLabel:f.shortLabel})),
       monthly: cohortTab(ctx,scfg,'monthly'),
@@ -1135,6 +1148,9 @@ function scenarioFitPanel(sf){var sum=document.getElementById('fitSummary'),body
   return '<tr><td class="l">'+esc(st.familyLabel)+'</td><td class="l">'+esc(st.step)+'</td><td>'+intg(st.n)+'</td><td>'+obs+'</td>'+bc+'<td class="l">'+verdict+'</td></tr>';}).join('');
  body.innerHTML='<div class="fitwrap"><table><thead><tr><th class="l">Plan</th><th class="l">Renewal step</th><th>Eligible n</th><th>Observed</th>'+scs.map(function(s){return '<th>'+(SCEN_LABELS[s]||s)+'</th>';}).join('')+'<th class="l">Closest</th></tr></thead><tbody>'+rows+'</tbody></table>'
   +'<div class="note">Each step = share of customers who reached that renewal and paid it, among those who paid the previous one (net of refunds/disputes). Range = floor \u2192 floor + customers still in payment retry. Scenario columns are each scenario\u2019s implied step rate. Steps where all scenarios assume the same rate can\u2019t tell them apart; the verdict uses only deciding steps with n \u2265 '+sf.minSample+'. Updates automatically as renewals land.</div></div>';}
+function filterNote(){ var el=document.getElementById('filterNote'); if(!el){ el=document.createElement('div'); el.id='filterNote'; el.className='banner warn'; var tb=document.getElementById('tabbar'); tb.parentNode.insertBefore(el,tb); }
+ var on=selCountries.length||selected.length; el.style.display=on?'block':'none';
+ if(on) el.innerHTML='<b>Filter on:</b> '+(selCountries.length?('countries '+selCountries.join(', ')):'')+(selCountries.length&&selected.length?' \u00b7 ':'')+(selected.length?(selected.length+' campaign'+(selected.length>1?'s':'')):'')+' \u2014 tables only show weeks with customers in this selection.'; }
 function dataStamp(){ var el=document.getElementById('dataStamp'); if(!el) return; var st=window.__dataStatus; if(!st){ el.textContent=''; return; }
  var t=new Date(st.at).toTimeString().slice(0,5); var c=st.cache||'';
  el.textContent=c.indexOf('hit')===0?('data loaded '+t+' \u00b7 from cache ('+c.replace('hit ','')+' old) \u2014 use \u21bb Refresh data for the latest Sheet'):('data read fresh from the Sheet at '+t); }
@@ -1169,7 +1185,7 @@ function docDataSource(res){var m=res.meta;function d(x){return new Date(x).toIS
  +'<li><b>Stripe payments</b> \u2014 id, Customer ID, Created date, Amount, Currency, Converted Amount / Refunded / Currency, Status, Decline Reason. <b>Source of truth for revenue</b> (D0, net, refunds, ROAS, LTV), conversion and payment retries. '+st(m.hasPayments,m.hasPayments?(intg(m.payRows)+' captured payments loaded'):'not loaded \u2014 Total Spend used as a fallback')+'</li>'
  +'<li><b>Prices</b> \u2014 Price ID, Product ID, Amount, Currency, Interval, Interval Count. Used to classify plans by length (1-week trial + 4 weeks, 4 weeks, 12 weeks) in any currency.</li>'
  +'<li><b>Meta ads</b> \u2014 Day, Campaign name, Ad name, Ad ID, Country, Amount spent, Impressions, CTR / CPC (link). Spend is joined to campaigns and, via the Ad ID at the end of utm_term, to ads. '+st(m.hasSpend,m.hasSpend?('spend '+usd(m.spendTotal)+(m.spendHasCountry?' with country split':' (no country split)')):'not loaded')+(m.clicksDerived?' Link clicks are not exported directly, so they are rebuilt per row from CTR \u00d7 impressions.':'')+'</li></ul></div>'
- +(m.dataDates?('<div class="block"><h3>Data through (latest record in each tab)</h3><p>'+['customers','subs','payments','meta'].map(function(k){var v=m.dataDates[k];return '<b>'+k+'</b> '+(v?new Date(v).toISOString().slice(0,10):'\u2014');}).join(' \u00b7 ')+'</p><p style="color:var(--muted)">All four should be within a day of each other. If payments or meta is older, recent T2P / renewals (payments) or spend (meta) will be understated \u2014 a warning appears in Data Quality.</p></div>'):'')
+ +(m.dataDates?('<div class="block"><h3>Data through (latest record in each tab)</h3><p>'+['customers','subs','payments','meta'].map(function(k){var v=m.dataDates[k];return '<b>'+k+'</b> '+(v?new Date(v).toISOString().slice(0,10):'\u2014');}).join(' \u00b7 ')+(m.dataDates.customersFrom?(' \u00b7 customers start '+new Date(m.dataDates.customersFrom).toISOString().slice(0,10)):'')+'</p><p style="color:var(--muted)">All four should be within a day of each other. If payments or meta is older, recent T2P / renewals (payments) or spend (meta) will be understated \u2014 a warning appears in Data Quality.</p></div>'):'')
  +'<div class="block"><h3>Currency</h3><p>Dashboard currency is <b>USD</b>. Payments use Stripe\u2019s <i>Converted Amount</i>, converted from its <i>Converted Currency</i> (USD charges settle in USD; other currencies settle in GBP here). Customer <i>Total Spend</i> is in the account default currency (GBP) and is converted with the GBP rate. Rates are set in <code>config.json \u2192 fx</code>.</p></div>'
  +'<div class="block"><h3>Country</h3><p>Customers are counted by <b>billing country</b> (Address Country); Meta spend by <b>ad-delivery country</b>. They usually match, but a customer can pay with a card from another country than the one the ad was shown in, so per-country CPA/ROAS are close approximations.</p></div>'
  +'<div class="block"><h3>Refreshing</h3><p>Export the full range from <code>'+d(m.startMs)+'</code> to today. In this offline file: <b>Upload exports &amp; recalculate</b> \u2192 pick the files \u2192 <b>Recalculate</b> (or <b>Publish</b> to keep them in this browser). In the hosted version, replace each Google Drive file via <b>Manage versions</b> (keeps the file ID) and reload \u2014 the protected backend reads the latest files.</p></div>'
@@ -1254,7 +1270,7 @@ function renderAll(){
  try{result=Engine.compute({subs:RAW.subs,customers:RAW.customers,prices:RAW.prices,coupons:RAW.coupons,meta:RAW.meta,metaAds:RAW.metaAds,payments:RAW.payments},CONFIG,selected,scenario,selCountries);}catch(e){ (window.__showErr||alert)("Compute failed: "+e.message); return; }
  if(!allCampaigns.length){allCampaigns=result.campaigns.slice();buildCampMenu();}
  if(!allCountries.length){allCountries=result.countries.slice();buildCtryMenu(result.meta.countrySource);document.getElementById('ctryFilter').classList.toggle('disabled',!result.meta.countrySource);}
- header(result);dataStamp();scenarioFitPanel(result.scenarioFit);rateChart("rateChartCard",result.monthly);rateChart("rateChartCardWeekly",result.weekly);
+ header(result);dataStamp();filterNote();scenarioFitPanel(result.scenarioFit);rateChart("rateChartCard",result.monthly);rateChart("rateChartCardWeekly",result.weekly);
  cohortTable("tbl-monthly",result.monthly,"Cohort",true,true);
  cohortTable("tbl-weekly",result.weekly,"Cohort",true,true);
  cpaTrend(result.cpaTrend);
@@ -1321,7 +1337,7 @@ function buildScenarioBar(){var bar=document.getElementById("scenarioBar");var s
 
 (function(){ function show(msg){ var t=document.getElementById('errToast'); if(!t){ t=document.createElement('div'); t.id='errToast'; t.className='errtoast'; document.body.appendChild(t);
   t.addEventListener('click',function(){ t.style.display='none'; }); }
-  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-05 10:05 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
+  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-05 10:16 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
  window.addEventListener('error',function(e){ show((e.message||'error')+(e.lineno?(' @'+e.lineno+':'+(e.colno||0)):'')); });
  window.addEventListener('unhandledrejection',function(e){ show('promise: '+((e.reason&&e.reason.message)||e.reason)); });
  window.__showErr=show; })();
@@ -1329,7 +1345,7 @@ var __dlog=[]; function dlog(m){ __dlog.push(new Date().toISOString().slice(11,1
 window.dlog=dlog;
 function showDiag(){ function t(f){ try{ return f(); }catch(e){ return 'ERR '+e.message; } }
  var auth=t(function(){ var ss=Object.keys(sessionStorage).filter(function(k){return /auth/.test(k);}), ls=Object.keys(localStorage).filter(function(k){return /auth/.test(k);}); return 'sessionStorage: '+(ss.join(',')||'none')+' | localStorage: '+(ls.join(',')||'none'); });
- var lines=['Build: 2026-10-05 10:05 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
+ var lines=['Build: 2026-10-05 10:16 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
   'Hosted mode: '+!!window.__HOSTED__, 'Boots: '+(window.__bootCount||0),
   'sessionStorage works: '+t(function(){ sessionStorage.setItem('__d','1'); sessionStorage.removeItem('__d'); return 'yes'; }),
   'Auth tokens: '+auth,
@@ -1337,6 +1353,16 @@ function showDiag(){ function t(f){ try{ return f(); }catch(e){ return 'ERR '+e.
   'Selected countries: '+(selCountries.join(',')||'all')+' | campaigns: '+(selected.length||'all'),
   'Data: '+(result?(result.meta.eligible+' eligible, '+result.campaigns.length+' campaigns, '+result.countries.length+' countries'):'not loaded'),
   'Data through: '+(result&&result.meta.dataDates?['customers','subs','payments','meta'].map(function(k){var v=result.meta.dataDates[k];return k+' '+(v?new Date(v).toISOString().slice(0,10):'—');}).join(' | '):'—'),
+  (function(){ if(!result||!result.meta.dataDates) return 'Tabs: —'; var D=result.meta.dataDates, f=function(x){return x?new Date(x).toISOString().slice(0,10):'—';};
+    return 'Tabs received:\n  customers '+D.rows.customers+' rows, '+f(D.customersFrom)+' \u2192 '+f(D.customers)+(D.badDates.customers?(', unreadable dates '+D.badDates.customers):'')
+     +'\n  subs      '+D.rows.subs+' rows, through '+f(D.subs)
+     +'\n  payments  '+D.rows.payments+' rows, '+f(D.paymentsFrom)+' \u2192 '+f(D.payments)+(D.badDates.payments?(', unreadable dates '+D.badDates.payments):'')
+     +'\n  meta      '+D.rows.meta+' rows, '+f(D.metaFrom)+' \u2192 '+f(D.meta)+(D.badDates.meta?(', unreadable dates '+D.badDates.meta):''); })(),
+  (function(){ var w=result&&result.meta.eligWhy; if(!w) return 'Customers: —';
+    return 'Customers tab: '+w.rows+' rows, '+w.headerCount+' columns'+(w.missingCols.length?(' \u2014 MISSING COLUMNS: '+w.missingCols.join(', ')):'')
+     +'\n  eligible '+w.eligible+' | no funnel '+w.noFunnel+' | zero payments '+w.zeroPayments+' | before start '+w.beforeStart+' | no id/unreadable date '+w.noIdOrDate+' | duplicates '+w.duplicate; })(),
+  'Totals: spend $'+(result?Math.round(result.meta.spendTotal).toLocaleString():'—')+' | net revenue $'+(result?Math.round(result.meta.net).toLocaleString():'—')+' | eligible '+(result?result.meta.eligible:'—'),
+  'Filters: countries '+(selCountries.length?selCountries.join(','):'all')+' | campaigns '+(selected.length?selected.length+' selected':'all')+' | scenario '+scenario,
   '', 'Recent events:'].concat(__dlog.slice(-25));
  var d=document.getElementById('diagBox'); if(!d){ d=document.createElement('div'); d.id='diagBox'; d.className='diagbox'; document.body.appendChild(d); }
  d.innerHTML='<div class="diaghead"><b>Diagnostics</b> \u2014 screenshot this and send it <button id="diagClose">Close</button></div><pre>'+lines.join('\n').replace(/</g,'&lt;')+'</pre>';
