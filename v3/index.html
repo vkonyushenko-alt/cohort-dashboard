@@ -191,7 +191,7 @@ tbody tr:hover .fz{background:#111c34}
 .foot{color:var(--faint);font-size:11px;margin-top:26px;text-align:center}
 </style></head><body><div class="wrap">
 <header class="top">
-  <div class="brand"><h1>Cohort Revenue Model <span class="v2tag">v3</span> <a class="v1link" href="../">open v1 ↗</a><span class="buildtag">build 2026-10-20 14:14 UTC</span></h1>
+  <div class="brand"><h1>Cohort Revenue Model <span class="v2tag">v3</span> <a class="v1link" href="../">open v1 ↗</a><span class="buildtag">build 2026-10-20 15:19 UTC</span></h1>
   <div class="sub"><span id="dataStamp" style="color:var(--faint)"></span><br>AI hairstyle app · Stripe + Meta · cumulative-revenue ROAS with continuation-rate forecasting</div></div>
   <div class="stat-strip" id="statStrip"></div>
 </header>
@@ -264,7 +264,7 @@ tbody tr:hover .fz{background:#111c34}
 <section class="view" data-view="audit"><div class="view-head"><h2>Audit</h2><span class="desc">Per-week reconciliation · no customer-level PII</span></div><div class="tablecard"><table id="tbl-audit"></table></div></section>
 <section class="view" data-view="methodology"><div class="doc" id="docMethodology"></div></section>
 
-<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-10-20 14:14 UTC · v3 · authenticated · data loaded from a protected backend</div>
+<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-10-20 15:19 UTC · v3 · authenticated · data loaded from a protected backend</div>
 </div>
 <script>
 /* Cohort revenue model — compute engine v3 (spec-aligned). Pure functions, no DOM. */
@@ -1390,7 +1390,7 @@ function dataStamp(){ var el=document.getElementById('dataStamp'); if(!el) retur
  el.textContent=c.indexOf('hit')===0?('data loaded '+t+' \u00b7 from cache ('+c.replace('hit ','')+' old) \u2014 use \u21bb Refresh data for the latest Sheet'):('data read fresh from the Sheet at '+t); }
 function stat(v,l,acc,tip){return '<div class="stat'+(acc?' accent':'')+'"'+(tip?' title="'+tip.replace(/"/g,'&quot;')+'"':'')+'><b>'+v+'</b><span>'+l+'</span></div>';}
 function header(res){var m=res.meta;CUR=m.currency;function d(x){return new Date(x).toISOString().slice(0,10);}
- document.getElementById("statStrip").innerHTML=stat(m.eligible.toLocaleString(),"Eligible",false,"Customers with a non-empty ff_funnel AND at least one payment (created on/after start, minus exclusions). This is the new-customer base the whole model is built on.")+stat(m.active.toLocaleString(),"Active",false,"Eligible customers whose subscription is still active, trialing, or in payment retry (past_due) — i.e. not fully canceled/churned.")+stat(m.repeat.toLocaleString(),"Repeat",false,"Eligible customers with 2+ NET paid charges — i.e. converted/renewed at least once, counting only charges not fully refunded or disputed.")+stat(m.refundRatePct!=null?(m.refundRatePct.toFixed(1)+"%"):"—","Refund rate",false,"Share of payments refunded: "+(m.refundPays||0)+" of "+intg(m.totalPays||0)+". By customers: "+(m.refundCustPct!=null?m.refundCustPct.toFixed(2):"—")+"% ("+(m.refundCusts||0)+" people). By revenue: "+(m.refundRateRevPct!=null?m.refundRateRevPct.toFixed(2):"—")+"% ("+usd(m.refundTotal||0)+") — the revenue rate is what the forecast haircut uses.")+(m.disputeStats&&m.disputeStats.rate!=null?stat('<span style="color:'+(m.disputeStats.rate>0.75?'var(--warn)':'inherit')+'">'+m.disputeStats.rate.toFixed(2)+'%</span>',"Disputes 30d",false,"Stripe dispute activity over the last 30 days of data: "+m.disputeStats.disputes+" disputes opened on "+intg(m.disputeStats.charges)+" successful charges (all charges on the Stripe account, including billing-routed ones). Stripe treats more than 0.75% as excessive. "+m.disputeStats.open+" dispute(s) need a response"+(m.disputeStats.nextDue?(", next evidence due "+new Date(m.disputeStats.nextDue).toISOString().slice(0,10)):"")+"; "+m.disputeStats.lost+" lost so far."):"")
+ document.getElementById("statStrip").innerHTML=stat(m.eligible.toLocaleString(),"Eligible",false,"Customers with a non-empty ff_funnel AND at least one payment (created on/after start, minus exclusions). This is the new-customer base the whole model is built on.")+stat(m.active.toLocaleString(),"Active",false,"Eligible customers whose subscription is still active, trialing, or in payment retry (past_due) — i.e. not fully canceled/churned.")+stat(m.repeat.toLocaleString(),"Repeat",false,"Eligible customers with 2+ NET paid charges — i.e. converted/renewed at least once, counting only charges not fully refunded or disputed.")+stat(m.refundRatePct!=null?(m.refundRatePct.toFixed(1)+"%"):"—","Refund rate",false,"Share of payments refunded: "+(m.refundPays||0)+" of "+intg(m.totalPays||0)+". By customers: "+(m.refundCustPct!=null?m.refundCustPct.toFixed(2):"—")+"% ("+(m.refundCusts||0)+" people). By revenue: "+(m.refundRateRevPct!=null?m.refundRateRevPct.toFixed(2):"—")+"% ("+usd(m.refundTotal||0)+") — the revenue rate is what the forecast haircut uses.")
   +stat(m.spendTotal?("$"+Math.round(m.spendTotal).toLocaleString()):"—","Spend "+m.spendCurrency,true)+stat(m.cpc!=null?("$"+m.cpc.toFixed(2)):"—","CPC")+stat(m.ctr!=null?((m.ctr*100).toFixed(2)+"%"):"—","CTR")+stat(d(m.asOf),"As of");
  var b=document.getElementById("spendBanner");
  if(m.spendCountryBlanked){b.className="banner warn show";b.innerHTML='<b>Country filter on:</b> showing only '+(selCountries.join(', '))+' customers. Meta spend isn\u2019t broken down by country, so Spend, CPA and ROAS are hidden (revenue, LTV and retention are filtered correctly).';}
@@ -1610,7 +1610,7 @@ async function ensureSnapshots(){ if(ensureSnapshots.done||!window.__api||!LIVE)
   var wid='live_'+dDay;
   if(!ids[wid] && (!lastW || dAsOf-lastW>=7*86400000-60000)) todo.push({id:wid,kind:'weekly',label:'Live forecast, data through '+dDay,cutoff:null,dataDate:dAsOf});
   for(var i=0;i<todo.length;i++){ var t=todo[i]; busy(true); await new Promise(function(r){setTimeout(r,60);});
-   var snap=Engine.snapshot(rawObj(),CONFIG,{id:t.id,kind:t.kind,label:t.label,cutoff:t.cutoff,build:'2026-10-20 14:14 UTC'}); snap.cutoff=(t.kind==='weekly')?t.dataDate:t.cutoff; busy(false);
+   var snap=Engine.snapshot(rawObj(),CONFIG,{id:t.id,kind:t.kind,label:t.label,cutoff:t.cutoff,build:'2026-10-20 15:19 UTC'}); snap.cutoff=(t.kind==='weekly')?t.dataDate:t.cutoff; busy(false);
    var res=await window.__api.save(snap); dlog('snapshot '+t.id+': '+(res&&res.saved?'saved':'already existed')); SNAPCACHE[t.id]=snap; }
   if(todo.length){ SNAPS=await window.__api.list(); fillHistory(); }
   var steps=SNAPS.filter(function(x){return x.kind==='step';}); for(var j=0;j<steps.length;j++){ try{ await getSnap(steps[j].id); }catch(e){ dlog('load '+steps[j].id+': '+e.message); } }
@@ -1696,7 +1696,7 @@ function buildScenarioBar(){var bar=document.getElementById("scenarioBar");var s
 
 (function(){ function show(msg){ var t=document.getElementById('errToast'); if(!t){ t=document.createElement('div'); t.id='errToast'; t.className='errtoast'; document.body.appendChild(t);
   t.addEventListener('click',function(){ t.style.display='none'; }); }
-  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-20 14:14 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
+  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-20 15:19 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
  window.addEventListener('error',function(e){ show((e.message||'error')+(e.lineno?(' @'+e.lineno+':'+(e.colno||0)):'')); });
  window.addEventListener('unhandledrejection',function(e){ show('promise: '+((e.reason&&e.reason.message)||e.reason)); });
  window.__showErr=show; })();
@@ -1704,7 +1704,7 @@ var __dlog=[]; function dlog(m){ __dlog.push(new Date().toISOString().slice(11,1
 window.dlog=dlog;
 function showDiag(){ function t(f){ try{ return f(); }catch(e){ return 'ERR '+e.message; } }
  var auth=t(function(){ var ss=Object.keys(sessionStorage).filter(function(k){return /auth/.test(k);}), ls=Object.keys(localStorage).filter(function(k){return /auth/.test(k);}); return 'sessionStorage: '+(ss.join(',')||'none')+' | localStorage: '+(ls.join(',')||'none'); });
- var lines=['Build: 2026-10-20 14:14 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
+ var lines=['Build: 2026-10-20 15:19 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
   'Hosted mode: '+!!window.__HOSTED__, 'Boots: '+(window.__bootCount||0),
   'sessionStorage works: '+t(function(){ sessionStorage.setItem('__d','1'); sessionStorage.removeItem('__d'); return 'yes'; }),
   'Auth tokens: '+auth,
