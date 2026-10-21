@@ -132,6 +132,7 @@ nav.tabs button.active{color:#eaf6ff;background:var(--panel2);border-color:var(-
 .legendbar{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;margin:10px 0 0;font-size:11.5px;color:var(--muted)}
 .legendbar b{color:#eaf6ff}.legendbar .lg-set{color:var(--warn);font-style:italic}.legendbar .lg-proj{color:var(--muted);font-style:italic}
 .partroas{color:var(--warn);font-style:italic;cursor:help}
+.rc.lowss .pct{color:var(--muted)!important;font-weight:400}
 .offrow{display:block;margin-top:4px;line-height:1}
 .offtag{display:inline-block;margin-left:0;font-size:9.5px;color:#9aa6bd;background:#1a2133;border:1px solid #2a3550;border-radius:5px;padding:1px 6px;vertical-align:middle;cursor:help;font-weight:500}
 .offtag.none{color:#c9a96b;border-color:#4a3d1e;background:#2a2413}
@@ -191,7 +192,7 @@ tbody tr:hover .fz{background:#111c34}
 .foot{color:var(--faint);font-size:11px;margin-top:26px;text-align:center}
 </style></head><body><div class="wrap">
 <header class="top">
-  <div class="brand"><h1>Cohort Revenue Model <span class="v2tag">v3</span> <a class="v1link" href="../">open v1 ↗</a><span class="buildtag">build 2026-10-20 15:19 UTC</span></h1>
+  <div class="brand"><h1>Cohort Revenue Model <span class="v2tag">v3</span> <a class="v1link" href="../">open v1 ↗</a><span class="buildtag">build 2026-10-21 10:08 UTC</span></h1>
   <div class="sub"><span id="dataStamp" style="color:var(--faint)"></span><br>AI hairstyle app · Stripe + Meta · cumulative-revenue ROAS with continuation-rate forecasting</div></div>
   <div class="stat-strip" id="statStrip"></div>
 </header>
@@ -264,7 +265,7 @@ tbody tr:hover .fz{background:#111c34}
 <section class="view" data-view="audit"><div class="view-head"><h2>Audit</h2><span class="desc">Per-week reconciliation · no customer-level PII</span></div><div class="tablecard"><table id="tbl-audit"></table></div></section>
 <section class="view" data-view="methodology"><div class="doc" id="docMethodology"></div></section>
 
-<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-10-20 15:19 UTC · v3 · authenticated · data loaded from a protected backend</div>
+<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-10-21 10:08 UTC · v3 · authenticated · data loaded from a protected backend</div>
 </div>
 <script>
 /* Cohort revenue model — compute engine v3 (spec-aligned). Pure functions, no DOM. */
@@ -870,7 +871,16 @@ tbody tr:hover .fz{background:#111c34}
           const dueMem=mem.filter(c=>c.starter&&(ctx.asOf-c.subCreated)/DAY>=chargeDay(c.starter,r));
           const base=r===1?dueMem:dueMem.filter(c=>c.netPaidCount>=r);
           const retryList=base.filter(c=>c.netPaidCount<r+1&&(ctx.subsBy[c.id]||[]).some(s=>s.status==='past_due'));
-          cells[lbl]={pct: aged?ret/aged*100:0, count:ret, aged:aged, of:New, notDue:New-aged, retrying:retryList.length, retryEst:retryEst(retryList,ctx), state:'partial'}; }
+          // Partial step. For a RENEWAL step (r>=2) the cohort's conversion at earlier steps is already
+          // known for everyone, so don't estimate the share from the matured subset alone (its mix of
+          // converters is unrepresentative). Use: known survivors at the previous step x observed rate
+          // at this step among those who have reached it.
+          const prevCnt = r===1 ? New : mem.filter(c=>c.netPaidCount>=r).length;
+          const dueBase = base.length, paidHere = base.filter(c=>c.netPaidCount>=r+1).length;
+          const rate = dueBase ? paidHere/dueBase : null;
+          const pctPartial = (r>1 && rate!=null) ? (prevCnt/New)*rate*100 : (aged?ret/aged*100:0);
+          cells[lbl]={pct: pctPartial, count:ret, aged:aged, of:New, notDue:New-aged, retrying:retryList.length, retryEst:retryEst(retryList,ctx),
+            state:'partial', stepBase:dueBase, stepPaid:paidHere, stepRate:rate, prevCnt:prevCnt, prevNotDue:prevCnt-dueBase }; }
         else { const srcs=[]; for(let q=1;q<=r;q++){ const nm=q===1?'T2P':('M'+(q-1)+(fam.hasConverted?'':''));
             if(q<=lastClosedR) srcs.push(nm+': this cohort, actual');
             else if(cont[q]!=null&&cont._src&&cont._src[q]) srcs.push(nm+': measured in this selection ('+Math.round(cont[q]*100)+'%, n='+cont._src[q].n+')');
@@ -1316,8 +1326,15 @@ function retCell(c){if(!c)return '<div class="rc blank">—</div>';var st=c.stat
     +(c.canceledBefore?'; '+c.canceledBefore+' canceled before the charge':'')
     +(c.failedOut?'; '+c.failedOut+' charge failed, canceled after retries':'')
     +(c.refunded?'; '+c.refunded+' paid then refunded/disputed':'')+'. '+(c.of?('Rate '+(c.count/c.of*100).toFixed(0)+'%, '+rangeTxt(c.count,c.of)+' given the sample size.'):'')+(c.retrying?retryTxt(c.retryEst):''); }
- else if(st==='partial'){ cnt=c.count+' of '+c.aged+' due'+(c.retrying?' <span class="rt">+'+c.retrying+' rt</span>':'');
-   tip='Cohort still reaching this charge date: '+c.count+' paid out of '+c.aged+' whose date has passed ('+rangeTxt(c.count,c.aged)+'); '+(c.notDue||0)+' not due yet.'+(c.retrying?(' '+c.retrying+' still in payment retry \u2014'+retryTxt(c.retryEst)):''); }
+ else if(st==='partial'){ cnt=(c.stepRate!=null?(c.stepPaid+' of '+c.stepBase+' converted due'):(c.count+' of '+c.aged+' due'))+(c.retrying?' <span class="rt">+'+c.retrying+' rt</span>':'');
+   if(c.stepRate!=null && c.stepBase<10) cls+=' lowss';
+   if(c.stepRate!=null){
+     tip='Cohort still reaching this charge date. Of the '+c.stepBase+' customer(s) who reached it and had paid the previous step, '+c.stepPaid+' paid ('+(c.stepRate*100).toFixed(0)+'%, '+rangeTxt(c.stepPaid,c.stepBase)+'). '
+       +'Applied to all '+c.prevCnt+' who paid the previous step ('+c.prevNotDue+' not due yet) that is '+c.pct.toFixed(0)+'% of the '+c.of+' customers in this cohort. '
+       +'The cohort\u2019s earlier steps are already final for everyone, so only this step is estimated.'
+       +(c.stepBase<10?' Small sample \u2014 fewer than 10 have reached this date, so the number is shown muted and can move a lot.':'')
+       +(c.retrying?(' '+c.retrying+' still in payment retry \u2014'+retryTxt(c.retryEst)):''); }
+   else tip='Cohort still reaching this charge date: '+c.count+' paid out of '+c.aged+' whose date has passed ('+rangeTxt(c.count,c.aged)+'); '+(c.notDue||0)+' not due yet.'+(c.retrying?(' '+c.retrying+' still in payment retry \u2014'+retryTxt(c.retryEst)):''); }
  else { cnt=String(c.count); if(c.src&&c.src.length) tip='Projected for the whole cohort. Built from: '+c.src.join(' \u2192 ')+'.'; }
  return '<div class="rc '+cls+'"'+(tip?' data-tip="'+esc(tip)+'"':'')+'><span class="pct">'+c.pct.toFixed(0)+'%</span><span class="cnt">'+cnt+'</span></div>';}
 function retTable(id,tab){var t=document.getElementById(id),ms=tab.milestones;
@@ -1456,6 +1473,7 @@ function docMethodology(res){ var m=res.meta; var hc=((1-(m.haircutMult||1))*100
    '<b>Net conversion</b>: a charge counts only if captured and not fully refunded; a dispute reverses one charge.',
    '<b>T2P</b> and <b>M1</b> columns = of customers who have reached that charge date, the share who paid. The line underneath shows how many reached it (of all in the row) and how many are still in payment retry (<b>rt</b>).',
    'Retention tabs show the <b>share of all customers in the cohort</b> still paying at each step; the Scenario fit table shows <b>renewal rates</b> (of those who paid the previous step). Share = T2P \u00d7 renewal rate.',
+   'Renewal steps a cohort has only partly reached (e.g. M1 while some customers are not at day 35 yet): <b>customers who paid the previous step \u00d7 renewal rate among those of them who have reached the date</b> \u00f7 cohort size. Earlier steps are final for everyone, so only the renewal rate is estimated. Shown amber, and muted while fewer than 10 have reached the date. T2P keeps paid \u00f7 customers who reached day 7.',
    'Cell styles: <b>bold</b> = actual and settled \u00b7 <span style="color:var(--warn)"><i>amber</i></span> = actual but still settling (not everyone has reached the date, or retries are open) \u00b7 <i>grey</i> = projected.',
    '<b>Payment retries</b>: Stripe retries a failed charge for about 14 days. A model built from resolved retry episodes (by days in retry and decline type) estimates how many will still pay \u2014 shown in hovers only, never added to forecasts.'])
  +B('6. Revenue, ROAS and LTV',[
@@ -1610,7 +1628,7 @@ async function ensureSnapshots(){ if(ensureSnapshots.done||!window.__api||!LIVE)
   var wid='live_'+dDay;
   if(!ids[wid] && (!lastW || dAsOf-lastW>=7*86400000-60000)) todo.push({id:wid,kind:'weekly',label:'Live forecast, data through '+dDay,cutoff:null,dataDate:dAsOf});
   for(var i=0;i<todo.length;i++){ var t=todo[i]; busy(true); await new Promise(function(r){setTimeout(r,60);});
-   var snap=Engine.snapshot(rawObj(),CONFIG,{id:t.id,kind:t.kind,label:t.label,cutoff:t.cutoff,build:'2026-10-20 15:19 UTC'}); snap.cutoff=(t.kind==='weekly')?t.dataDate:t.cutoff; busy(false);
+   var snap=Engine.snapshot(rawObj(),CONFIG,{id:t.id,kind:t.kind,label:t.label,cutoff:t.cutoff,build:'2026-10-21 10:08 UTC'}); snap.cutoff=(t.kind==='weekly')?t.dataDate:t.cutoff; busy(false);
    var res=await window.__api.save(snap); dlog('snapshot '+t.id+': '+(res&&res.saved?'saved':'already existed')); SNAPCACHE[t.id]=snap; }
   if(todo.length){ SNAPS=await window.__api.list(); fillHistory(); }
   var steps=SNAPS.filter(function(x){return x.kind==='step';}); for(var j=0;j<steps.length;j++){ try{ await getSnap(steps[j].id); }catch(e){ dlog('load '+steps[j].id+': '+e.message); } }
@@ -1696,7 +1714,7 @@ function buildScenarioBar(){var bar=document.getElementById("scenarioBar");var s
 
 (function(){ function show(msg){ var t=document.getElementById('errToast'); if(!t){ t=document.createElement('div'); t.id='errToast'; t.className='errtoast'; document.body.appendChild(t);
   t.addEventListener('click',function(){ t.style.display='none'; }); }
-  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-20 15:19 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
+  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-21 10:08 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
  window.addEventListener('error',function(e){ show((e.message||'error')+(e.lineno?(' @'+e.lineno+':'+(e.colno||0)):'')); });
  window.addEventListener('unhandledrejection',function(e){ show('promise: '+((e.reason&&e.reason.message)||e.reason)); });
  window.__showErr=show; })();
@@ -1704,7 +1722,7 @@ var __dlog=[]; function dlog(m){ __dlog.push(new Date().toISOString().slice(11,1
 window.dlog=dlog;
 function showDiag(){ function t(f){ try{ return f(); }catch(e){ return 'ERR '+e.message; } }
  var auth=t(function(){ var ss=Object.keys(sessionStorage).filter(function(k){return /auth/.test(k);}), ls=Object.keys(localStorage).filter(function(k){return /auth/.test(k);}); return 'sessionStorage: '+(ss.join(',')||'none')+' | localStorage: '+(ls.join(',')||'none'); });
- var lines=['Build: 2026-10-20 15:19 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
+ var lines=['Build: 2026-10-21 10:08 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
   'Hosted mode: '+!!window.__HOSTED__, 'Boots: '+(window.__bootCount||0),
   'sessionStorage works: '+t(function(){ sessionStorage.setItem('__d','1'); sessionStorage.removeItem('__d'); return 'yes'; }),
   'Auth tokens: '+auth,
