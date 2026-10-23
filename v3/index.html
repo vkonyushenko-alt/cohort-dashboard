@@ -192,7 +192,7 @@ tbody tr:hover .fz{background:#111c34}
 .foot{color:var(--faint);font-size:11px;margin-top:26px;text-align:center}
 </style></head><body><div class="wrap">
 <header class="top">
-  <div class="brand"><h1>Cohort Revenue Model <span class="v2tag">v3</span> <a class="v1link" href="../">open v1 ↗</a><span class="buildtag">build 2026-10-21 10:08 UTC</span></h1>
+  <div class="brand"><h1>Cohort Revenue Model <span class="v2tag">v3</span> <a class="v1link" href="../">open v1 ↗</a><span class="buildtag">build 2026-10-23 16:19 UTC</span></h1>
   <div class="sub"><span id="dataStamp" style="color:var(--faint)"></span><br>AI hairstyle app · Stripe + Meta · cumulative-revenue ROAS with continuation-rate forecasting</div></div>
   <div class="stat-strip" id="statStrip"></div>
 </header>
@@ -265,7 +265,7 @@ tbody tr:hover .fz{background:#111c34}
 <section class="view" data-view="audit"><div class="view-head"><h2>Audit</h2><span class="desc">Per-week reconciliation · no customer-level PII</span></div><div class="tablecard"><table id="tbl-audit"></table></div></section>
 <section class="view" data-view="methodology"><div class="doc" id="docMethodology"></div></section>
 
-<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-10-21 10:08 UTC · v3 · authenticated · data loaded from a protected backend</div>
+<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-10-23 16:19 UTC · v3 · authenticated · data loaded from a protected backend</div>
 </div>
 <script>
 /* Cohort revenue model — compute engine v3 (spec-aligned). Pure functions, no DOM. */
@@ -389,7 +389,7 @@ tbody tr:hover .fz{background:#111c34}
       const cur=(r['currencyCode']||'').toLowerCase(); const div=ZERO_DEC.has(cur)?1:100;
       return { id:(r['id']||'').trim(), t:parseDate(r['date']), amount:num(r['amount'])/div, refunded:num(r['amountRefunded'])/div, cur:cur,
         order:(r['orderId']||'').trim(), status:(r['status']||'').toUpperCase(), cust:(r['customerId']||'').trim(),
-        country:((r['customerBillingAddressCountryCode']||md.ff_country_code||'')+'').toUpperCase(), md:md, kind:(md.ff_initiation_type||'').toLowerCase() }; })
+        country:((r['customerBillingAddressCountryCode']||md.ff_country_code||'')+'').toUpperCase(), cardCountry:((r['paymentInstrumentBinDataIssuerCountryCode']||'')+'').toUpperCase(), md:md, kind:(md.ff_initiation_type||'').toLowerCase() }; })
       .filter(x=>x.cust && x.t!=null);
     const byCust={}; rows.forEach(x=>{ (byCust[x.cust]=byCust[x.cust]||[]).push(x); if(stats.from==null||x.t<stats.from) stats.from=x.t; if(stats.to==null||x.t>stats.to) stats.to=x.t; });
     const newCus=[], newSubs=[], newPays=[], newPrices=[]; const priceSeen={};
@@ -436,7 +436,7 @@ tbody tr:hover .fz{background:#111c34}
         'ff_trial_price_id (metadata)': introW===1?introId:'', 'ff_session_id (metadata)':sid, 'Offer (billing)':P?(P['Offer']||''):'' });
       const g=rate(tsc)||1;
       newCus.push({ 'id':custId, 'Created (UTC)':fmtDT(first.t).slice(0,16), 'Payment Count':String(paidCount), 'Total Spend':(netUSD/g).toFixed(2),
-        'Refunded Volume':(refUSD/g).toFixed(2), 'Dispute Losses':(lostUSD/g).toFixed(2), 'Address Country':paidCit.country||'',
+        'Refunded Volume':(refUSD/g).toFixed(2), 'Dispute Losses':(lostUSD/g).toFixed(2), 'Address Country':paidCit.country||'', 'Card Issue Country':paidCit.cardCountry||'',
         'utm_campaign (metadata)':md.utm_campaign||'', 'utm_term (metadata)':md.utm_term||'', 'utm_source (metadata)':md.utm_source||'', 'utm_medium (metadata)':md.utm_medium||'',
         'utm_content (metadata)':md.utm_content||'', 'ff_session_id (metadata)':sid, 'ff_funnel (metadata)':funnel });
       stats.customers++;
@@ -446,7 +446,7 @@ tbody tr:hover .fz{background:#111c34}
     const withHeader=(text,P,need)=>{ const h=hdr(P,need); if(h.length===P.header.length) return {text,h};
       const lines=String(text).split(/\r\n|\n|\r/); let idx=lines.findIndex(l=>l.indexOf(P.header[0])>=0 && l.split(';').length>=P.header.length-1); if(idx<0) idx=0;
       lines[idx]=lines[idx]+';'+h.slice(P.header.length).map(csvCell).join(';'); return {text:lines.join('\n'),h}; };
-    const cusN=withHeader(raw.customers||'',SC,['id','Created (UTC)','Payment Count','Total Spend','Refunded Volume','Dispute Losses','Address Country','utm_campaign (metadata)','utm_term (metadata)','ff_session_id (metadata)','ff_funnel (metadata)']);
+    const cusN=withHeader(raw.customers||'',SC,['id','Created (UTC)','Payment Count','Total Spend','Refunded Volume','Dispute Losses','Address Country','Card Issue Country','utm_campaign (metadata)','utm_term (metadata)','ff_session_id (metadata)','ff_funnel (metadata)']);
     const subN=withHeader(raw.subs||'',SS,['Customer ID','Status','Plan','Product ID','Amount','Currency','Created (UTC)','Trial Start (UTC)','Canceled At (UTC)','Cancellation Reason','ff_trial_price_id (metadata)']);
     const payN=withHeader(raw.payments||'',SP,['id','Created date (UTC)','Amount','Amount Refunded','Currency','Converted Amount','Converted Amount Refunded','Converted Currency','Status','Customer ID','Decline Reason','Refunded date (UTC)']);
     const prN=withHeader(raw.prices||'',PR,['Price ID','Product ID','Amount','Currency','Interval','Interval Count']);
@@ -497,11 +497,14 @@ tbody tr:hover .fz{background:#111c34}
     const cu=parseCSV(raw.customers,{skipTitle:true,delim:';'});
     const excl=cfg.exclusions||{customerIds:[],funnelValues:[]};
     const seen={}; let dupes=0;
+    // Country = the card's issuing country; when a customer has none, their billing-address country.
     const CCOLS=['Card Issue Country','Card Country','Address Country','Card Address Country','Country','country'];
-    const countryCol=CCOLS.find(c=>cu.header.indexOf(c)>=0 && cu.rows.some(r=>(r[c]||'').trim()));
-    const countrySource=countryCol||null;   // no currency proxy: without a country column the filter is unavailable
+    const ccAvail=CCOLS.filter(c=>cu.header.indexOf(c)>=0 && cu.rows.some(r=>(r[c]||'').trim()));
+    const countryCol=ccAvail[0]||null;
+    const pickCountry=r=>{ for(const c of ccAvail){ const v=(r[c]||'').trim(); if(v) return v.toUpperCase(); } return 'Unknown'; };
+    const countrySource=countryCol ? (ccAvail.length>1 ? countryCol+' (else '+ccAvail[1]+')' : countryCol) : null;   // no currency proxy: without a country column the filter is unavailable
     let customers=cu.rows.map(r=>({ id:r['id'], created:parseDate(r['Created (UTC)']),
-      country: countryCol ? ((r[countryCol]||'').trim().toUpperCase()||'Unknown') : null,
+      country: countryCol ? pickCountry(r) : null,
       totalSpend:num(r['Total Spend']), paymentCount:num(r['Payment Count']),
       refunded:num(r['Refunded Volume']), disputes:num(r['Dispute Losses']), currency:cur,
       utm_campaign:(r['utm_campaign (metadata)']||'').trim(), utm_term:(r['utm_term (metadata)']||'').trim(),
@@ -1414,7 +1417,7 @@ function header(res){var m=res.meta;CUR=m.currency;function d(x){return new Date
  else if(!m.hasSpend){b.className="banner warn show";b.innerHTML='<b>No Meta ad-spend loaded.</b> Spend, CPA and ROAS show “—”. Upload a Meta export (Day · Campaign · Amount spent · Link clicks · Impressions).';}
  else if(m.spendMode==="window"){b.className="banner warn show";b.innerHTML='<b>Campaign-level spend ('+usd(m.spendTotal)+').</b> Whole-window rows can’t be split per week — cohort Spend/CPA/ROAS stay blank; totals and by-campaign are exact. Upload a day-level export to fill cohort tabs.';}
  else{b.className="banner show";var eng=intg(m.impressions)+' impressions · CPM $'+(m.cpm?m.cpm.toFixed(2):'—')+(m.clicks?(' · '+intg(m.clicks)+' clicks · CPC $'+(m.cpc?m.cpc.toFixed(2):'—')):' · clicks not in this export (CTR/CPC unavailable)');
-  if(m.countryMismatch&&m.countryMismatch.total){ eng+=' \u00b7 Country filter: customers by billing country, spend by ad-delivery country \u2014 '+m.countryMismatch.n+' of '+m.countryMismatch.total+' customers came from campaigns with no spend in this country'; }
+  if(m.countryMismatch&&m.countryMismatch.total){ eng+=' \u00b7 Country filter: customers by card country, spend by ad-delivery country \u2014 '+m.countryMismatch.n+' of '+m.countryMismatch.total+' customers came from campaigns with no spend in this country'; }
   b.innerHTML='<b>Day-level Meta spend ('+usd(m.spendTotal)+' '+m.spendCurrency+').</b> Bucketed to each cohort week/month by reporting day — Spend/CPA/ROAS factual. '+eng+'. '+(m.adSpendHas?('Ad-level export joined to utm_term ('+usd(m.adSpendTotal)+').'):'')+' '+(m.hasPayments?('Revenue from '+intg(m.payRows)+' payment transactions.'):'');}
  var rb=document.getElementById("reconBanner"),notes=[];
  (m.aliasApplied||[]).forEach(function(a){notes.push('Campaign alias (verify): <code>'+sc(a.from)+'</code> → <code>'+sc(a.to)+'</code>.');});
@@ -1431,7 +1434,7 @@ function docDataSource(res){var m=res.meta;function d(x){return new Date(x).toIS
  '<div class="view-head"><h2>Data source</h2><span class="desc">What is loaded, what each export is used for, and how to refresh</span></div>'
  +'<div class="kpis"><div class="kpi"><b>'+d(m.startMs)+'</b><span>range start</span></div><div class="kpi"><b>'+d(m.asOf)+'</b><span>data through</span></div><div class="kpi"><b>'+m.customers+'</b><span>customer rows</span></div><div class="kpi"><b>'+m.eligible+'</b><span>eligible</span></div><div class="kpi"><b>'+m.excluded+'</b><span>excluded</span></div><div class="kpi"><b>'+intg(m.payRows||0)+'</b><span>payments</span></div></div>'
  +'<div class="block"><h3>Loaded exports</h3><ul>'
- +'<li><b>Stripe customers</b> \u2014 id, Created (UTC), Payment Count, Total Spend, Refunded Volume, Dispute Losses, Address Country, ff_funnel, utm_campaign, utm_term. Used for eligibility, cohort date, campaign/ad attribution and country. '+st(!!m.countrySource,m.countrySource?('country from '+m.countrySource):'no country column \u2014 country filter off')+'</li>'
+ +'<li><b>Stripe customers</b> \u2014 id, Created (UTC), Payment Count, Total Spend, Refunded Volume, Dispute Losses, Card Issue Country, Address Country, ff_funnel, utm_campaign, utm_term. Used for eligibility, cohort date, campaign/ad attribution and country. '+st(!!m.countrySource,m.countrySource?('country from '+m.countrySource):'no country column \u2014 country filter off')+'</li>'
  +'<li><b>Stripe subscriptions</b> (all-time, Status = All) \u2014 Customer ID, Status, Plan (price), Product ID, Created, Trial Start, Current Period End, Canceled At, ff_trial_price_id. Used for plan family, trial, charge dates, payment-retry status (past_due) and retention \u2014 not for revenue.</li>'
  +'<li><b>Stripe payments</b> \u2014 id, Customer ID, Created date, Amount, Currency, Converted Amount / Refunded / Currency, Status, Decline Reason. <b>Source of truth for revenue</b> (D0, net, refunds, ROAS, LTV), conversion and payment retries. '+st(m.hasPayments,m.hasPayments?(intg(m.payRows)+' captured payments loaded'):'not loaded \u2014 Total Spend used as a fallback')+'</li>'
  +'<li><b>Prices</b> \u2014 Price ID, Product ID, Amount, Currency, Interval, Interval Count. Used to classify plans by length (1-week trial + 4 weeks, 4 weeks, 12 weeks) in any currency.</li>'
@@ -1439,7 +1442,7 @@ function docDataSource(res){var m=res.meta;function d(x){return new Date(x).toIS
  +(m.dataDates?('<div class="block"><h3>Data through (latest record in each tab)</h3><p>'+['customers','subs','payments','meta'].map(function(k){var v=m.dataDates[k];return '<b>'+k+'</b> '+(v?new Date(v).toISOString().slice(0,10):'\u2014');}).join(' \u00b7 ')+(m.dataDates.customersFrom?(' \u00b7 customers start '+new Date(m.dataDates.customersFrom).toISOString().slice(0,10)):'')+'</p><p style="color:var(--muted)">All four should be within a day of each other. If payments or meta is older, recent T2P / renewals (payments) or spend (meta) will be understated \u2014 a warning appears in Data Quality.</p></div>'):'')
  +(m.billingStats?('<div class="block"><h3>Own billing (since the switch from Stripe checkout)</h3><p><b>'+m.billingStats.customers+'</b> billing customers from <b>'+m.billingStats.rows+'</b> payment rows ('+(m.billingStats.from?d(m.billingStats.from):'\u2014')+' \u2192 '+(m.billingStats.to?d(m.billingStats.to):'\u2014')+'). Each billing payment is joined to its Stripe payment by <b>order_id</b> ('+m.billingStats.matchedStripe+' matched, '+m.billingStats.unmatched+' not): Stripe supplies refunds ('+m.billingStats.refundsFromStripe+' found only in Stripe), disputes and the settled USD/GBP amount. Plan and offer come from the billing_prices tab; campaign and ad from the purchase\u2019s UTMs; renewals inherit them through the billing customerId. '+(m.billingStats.skippedDuplicates?m.billingStats.skippedDuplicates+' customer(s) also present in Stripe (same ff_session_id) are counted once. ':'')+(m.asOfNote?'Billing data ends '+new Date(m.asOfNote.billing).toISOString().slice(0,16).replace('T',' ')+' UTC, earlier than Stripe ('+new Date(m.asOfNote.stripe).toISOString().slice(0,16).replace('T',' ')+'), so the dashboard treats the billing end as \u201cnow\u201d: charges due after it are not counted as missed.':'')+'</p></div>'):'')
  +'<div class="block"><h3>Currency</h3><p>Dashboard currency is <b>USD</b>. Payments use Stripe\u2019s <i>Converted Amount</i>, converted from its <i>Converted Currency</i> (USD charges settle in USD; other currencies settle in GBP here). Customer <i>Total Spend</i> is in the account default currency (GBP) and is converted with the GBP rate. Rates are set in <code>config.json \u2192 fx</code>.</p></div>'
- +'<div class="block"><h3>Country</h3><p>Customers are counted by <b>billing country</b> (Address Country); Meta spend by <b>ad-delivery country</b>. They usually match, but a customer can pay with a card from another country than the one the ad was shown in, so per-country CPA/ROAS are close approximations.</p></div>'
+ +'<div class="block"><h3>Country</h3><p>Customers are counted by <b>card country</b> (Card Issue Country, the country of the bank that issued the card; billing-address country when it is missing); Meta spend by <b>ad-delivery country</b>. They usually match, but a customer can pay with a card from another country than the one the ad was shown in, so per-country CPA/ROAS are close approximations.</p></div>'
  +'<div class="block"><h3>Refreshing</h3><p>Export the full range from <code>'+d(m.startMs)+'</code> to today. In this offline file: <b>Upload exports &amp; recalculate</b> \u2192 pick the files \u2192 <b>Recalculate</b> (or <b>Publish</b> to keep them in this browser). In the hosted version, replace each Google Drive file via <b>Manage versions</b> (keeps the file ID) and reload \u2014 the protected backend reads the latest files.</p></div>'
  +'<div class="block"><h3>Data quality</h3><p>'+((m.dq&&m.dq.length)?m.dq.map(function(w){return esc(w.detail);}).join('<br>'):'No issues detected.')+'</p></div>';}
 
@@ -1452,7 +1455,7 @@ function docMethodology(res){ var m=res.meta; var hc=((1-(m.haircutMult||1))*100
  document.getElementById("docMethodology").innerHTML=
  '<div class="view-head"><h2>Methodology</h2><span class="desc">Every rule the dashboard applies, in the order data flows through it</span></div>'
  +B('1. Data sources',[
-   '<b>Stripe customers</b>: signup date (Created), Payment Count, Total Spend, refunds/disputes, <b>Address Country</b> (billing country), ff_funnel, utm_campaign, utm_term.',
+   '<b>Stripe customers</b>: signup date (Created), Payment Count, Total Spend, refunds/disputes, <b>Card Issue Country</b> (card\u2019s bank country; Address Country as fallback), ff_funnel, utm_campaign, utm_term.',
    '<b>Stripe subscriptions</b>: plan (price), status, trial, period dates \u2014 used for plan type, charge dates and payment-retry status (past_due). Not used for revenue.',
    '<b>Stripe payments</b>: every charge with amount, refund, currency, status and decline reason \u2014 the <b>source of truth for revenue</b>, conversions, renewals and retries.',
    '<b>Prices</b>: plan length (interval \u00d7 interval count) in every currency. <b>Meta</b>: spend per day, campaign, ad name, <b>Ad ID</b> and delivery <b>Country</b>, impressions, CTR/CPC.',
@@ -1505,7 +1508,7 @@ function docMethodology(res){ var m=res.meta; var hc=((1-(m.haircutMult||1))*100
    'Billing customers are assigned to <b>hairstyle-1dq</b> (the funnel currently served to 100% of traffic); config.billing.funnelMap can map funnel IDs to other names.'])
  +B('10. Campaigns, ads and countries',[
    'Spend joins campaigns by name (with configured aliases) and ads by <b>Ad ID</b> (ad name only if an ad has no ID \u2014 names are shared by many ads).',
-   'Country filter: customers by <b>billing</b> country, spend by Meta <b>delivery</b> country; the banner shows how many customers came from campaigns with no spend in that country.',
+   'Country filter: customers by <b>card</b> country (the issuing bank\u2019s country; billing-address country when missing \u2014 the two agree for ~97% of customers), spend by Meta <b>delivery</b> country; the banner shows how many customers came from campaigns with no spend in that country.',
    '<b>off since \u2026</b>: no Meta spend in the last 3 days of the data. <b>no Meta spend</b>: the name never matches Meta (e.g. unfilled UTM placeholder).'])
  +B('11. Privacy and access',[
    'The public page contains no data or secrets; data loads only after Supabase sign-in, through a protected function that reads the Sheet with a private token.',
@@ -1628,7 +1631,7 @@ async function ensureSnapshots(){ if(ensureSnapshots.done||!window.__api||!LIVE)
   var wid='live_'+dDay;
   if(!ids[wid] && (!lastW || dAsOf-lastW>=7*86400000-60000)) todo.push({id:wid,kind:'weekly',label:'Live forecast, data through '+dDay,cutoff:null,dataDate:dAsOf});
   for(var i=0;i<todo.length;i++){ var t=todo[i]; busy(true); await new Promise(function(r){setTimeout(r,60);});
-   var snap=Engine.snapshot(rawObj(),CONFIG,{id:t.id,kind:t.kind,label:t.label,cutoff:t.cutoff,build:'2026-10-21 10:08 UTC'}); snap.cutoff=(t.kind==='weekly')?t.dataDate:t.cutoff; busy(false);
+   var snap=Engine.snapshot(rawObj(),CONFIG,{id:t.id,kind:t.kind,label:t.label,cutoff:t.cutoff,build:'2026-10-23 16:19 UTC'}); snap.cutoff=(t.kind==='weekly')?t.dataDate:t.cutoff; busy(false);
    var res=await window.__api.save(snap); dlog('snapshot '+t.id+': '+(res&&res.saved?'saved':'already existed')); SNAPCACHE[t.id]=snap; }
   if(todo.length){ SNAPS=await window.__api.list(); fillHistory(); }
   var steps=SNAPS.filter(function(x){return x.kind==='step';}); for(var j=0;j<steps.length;j++){ try{ await getSnap(steps[j].id); }catch(e){ dlog('load '+steps[j].id+': '+e.message); } }
@@ -1665,7 +1668,7 @@ function buildTabs(){var bar=document.getElementById("tabbar");bar.innerHTML=TAB
 
 function buildCtryMenu(src){var opts=document.getElementById("ctryOpts");
  document.getElementById("ctryNote").innerHTML= !src
-  ? 'No country column in the customers export, so country filtering is unavailable. Add <b>Address Country</b> (or Card Country) to the Stripe customers export.'
+  ? 'No country column in the customers export, so country filtering is unavailable. Add <b>Card Issue Country</b> (or Address Country) to the Stripe customers export.'
   : 'Customers by <b>'+esc(src)+'</b>. '+(result&&result.meta.spendHasCountry?'Meta spend is split by its Country breakdown, so Spend / CPA / ROAS follow the filter.':'Meta export has no Country breakdown, so Spend / CPA / ROAS are hidden while filtering.');
  opts.innerHTML=allCountries.map(function(c){return '<label><input type="checkbox" value="'+esc(c.code)+'"'+(selCountries.length===0||selCountries.indexOf(c.code)>=0?' checked':'')+'><span>'+esc(c.code)+' <span class="na">('+c.n+')</span></span></label>';}).join('');}
 function ctryLabel(){var b=document.getElementById("ctryBtn");var src='countries';
@@ -1714,7 +1717,7 @@ function buildScenarioBar(){var bar=document.getElementById("scenarioBar");var s
 
 (function(){ function show(msg){ var t=document.getElementById('errToast'); if(!t){ t=document.createElement('div'); t.id='errToast'; t.className='errtoast'; document.body.appendChild(t);
   t.addEventListener('click',function(){ t.style.display='none'; }); }
-  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-21 10:08 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
+  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-23 16:19 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
  window.addEventListener('error',function(e){ show((e.message||'error')+(e.lineno?(' @'+e.lineno+':'+(e.colno||0)):'')); });
  window.addEventListener('unhandledrejection',function(e){ show('promise: '+((e.reason&&e.reason.message)||e.reason)); });
  window.__showErr=show; })();
@@ -1722,7 +1725,7 @@ var __dlog=[]; function dlog(m){ __dlog.push(new Date().toISOString().slice(11,1
 window.dlog=dlog;
 function showDiag(){ function t(f){ try{ return f(); }catch(e){ return 'ERR '+e.message; } }
  var auth=t(function(){ var ss=Object.keys(sessionStorage).filter(function(k){return /auth/.test(k);}), ls=Object.keys(localStorage).filter(function(k){return /auth/.test(k);}); return 'sessionStorage: '+(ss.join(',')||'none')+' | localStorage: '+(ls.join(',')||'none'); });
- var lines=['Build: 2026-10-21 10:08 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
+ var lines=['Build: 2026-10-23 16:19 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
   'Hosted mode: '+!!window.__HOSTED__, 'Boots: '+(window.__bootCount||0),
   'sessionStorage works: '+t(function(){ sessionStorage.setItem('__d','1'); sessionStorage.removeItem('__d'); return 'yes'; }),
   'Auth tokens: '+auth,
