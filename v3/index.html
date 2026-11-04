@@ -192,7 +192,7 @@ tbody tr:hover .fz{background:#111c34}
 .foot{color:var(--faint);font-size:11px;margin-top:26px;text-align:center}
 </style></head><body><div class="wrap">
 <header class="top">
-  <div class="brand"><h1>Cohort Revenue Model <span class="v2tag">v3</span> <a class="v1link" href="../">open v1 ↗</a><span class="buildtag">build 2026-10-23 16:19 UTC</span></h1>
+  <div class="brand"><h1>Cohort Revenue Model <span class="v2tag">v3</span> <a class="v1link" href="../">open v1 ↗</a><span class="buildtag">build 2026-11-04 11:57 UTC</span></h1>
   <div class="sub"><span id="dataStamp" style="color:var(--faint)"></span><br>AI hairstyle app · Stripe + Meta · cumulative-revenue ROAS with continuation-rate forecasting</div></div>
   <div class="stat-strip" id="statStrip"></div>
 </header>
@@ -265,7 +265,7 @@ tbody tr:hover .fz{background:#111c34}
 <section class="view" data-view="audit"><div class="view-head"><h2>Audit</h2><span class="desc">Per-week reconciliation · no customer-level PII</span></div><div class="tablecard"><table id="tbl-audit"></table></div></section>
 <section class="view" data-view="methodology"><div class="doc" id="docMethodology"></div></section>
 
-<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-10-23 16:19 UTC · v3 · authenticated · data loaded from a protected backend</div>
+<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-11-04 11:57 UTC · v3 · authenticated · data loaded from a protected backend</div>
 </div>
 <script>
 /* Cohort revenue model — compute engine v3 (spec-aligned). Pure functions, no DOM. */
@@ -338,7 +338,8 @@ tbody tr:hover .fz{background:#111c34}
     const key=famKeyForCadence(p?intervalDays(p):null, !!sub.trialPriceId);
     if(!key) return null;
     const f=cfg.families.find(x=>x.key===key); if(!f) return null;
-    const rate=c=>{ c=(c||'usd').toLowerCase(); return (fx&&fx[c]!=null)?fx[c]:1; };
+    // no rate for the currency -> 0 (the customer is left out of the forecast), never treated as USD
+    const rate=c=>{ c=(c||'usd').toLowerCase(); return (fx&&fx[c]!=null)?fx[c]:0; };
     const renewal = p? p.amount*rate(p.currency) : (f.renewalAmount!=null?f.renewalAmount:sub.amount);
     let entry;
     if(sub.trialPriceId && prices[sub.trialPriceId]){ const tp=prices[sub.trialPriceId]; entry=tp.amount*rate(tp.currency); }
@@ -475,7 +476,17 @@ tbody tr:hover .fz{background:#111c34}
     const dq=[]; const warn=(t,d)=>dq.push({type:t,detail:d});
     const fx=Object.assign({usd:1},cfg.fx||{});
     const cur=(cfg.currency||'USD').toLowerCase();
-    const toCur=(amt,ccy)=>amt*(fx[(ccy||cur).toLowerCase()]||1);
+    // Currencies without a configured rate: derive one from Stripe's own settlements
+    // (Converted Amount in a currency we know / original Amount), median per currency.
+    const fxDerived={};
+    try{ const pp=parseCSV(raw.payments||'',{skipTitle:true,delim:';'}); const obs={};
+      pp.rows.forEach(r=>{ const c=(r['Currency']||'').toLowerCase(), cc=(r['Converted Currency']||'').toLowerCase(); const a=num(r['Amount']), ca=num(r['Converted Amount']);
+        if(!c || fx[c]!=null || !(a>0) || !(ca>0) || fx[cc]==null) return; (obs[c]=obs[c]||[]).push(ca*fx[cc]/a); });
+      Object.entries(obs).forEach(([c,v])=>{ v.sort((x,y)=>x-y); fxDerived[c]={rate:v[Math.floor(v.length/2)], n:v.length}; fx[c]=fxDerived[c].rate; });
+    }catch(e){}
+    // A currency with no rate at all converts to 0 (left out), never relabelled as USD.
+    const missingFx=new Set();
+    const toCur=(amt,ccy)=>{ const c=(ccy||cur).toLowerCase(); const r=fx[c]; if(r==null){ if(amt) missingFx.add(c); return 0; } return amt*r; };
     // customer-export "Total Spend" is reported in the Stripe account's default currency (GBP here), regardless of the customer's currency
     const tsRate = cfg.totalSpendCurrency ? (fx[String(cfg.totalSpendCurrency).toLowerCase()]||1) : (cfg.totalSpendFx||1);
 
@@ -492,7 +503,8 @@ tbody tr:hover .fz{background:#111c34}
     const badCur=new Set();
     Object.values(prices).forEach(p=>{ if(p.currency && p.currency!==cur && !fx[p.currency]) badCur.add(p.currency); });
     subs.forEach(s=>{ if(s.currency && s.currency!==cur && !fx[s.currency]) badCur.add(s.currency); });
-    if(badCur.size) warn('unsupported_currency','Amounts in '+Array.from(badCur).join(', ').toUpperCase()+' have no fx rate in config — set fx to convert to '+cur.toUpperCase()+'. Non-'+cur.toUpperCase()+' amounts are never silently relabelled.');
+    if(badCur.size) warn('unsupported_currency','Amounts in '+Array.from(badCur).join(', ').toUpperCase()+' have no fx rate (not in config, and no Stripe settlement to derive one from). Customers on these prices are left out of the forecast until a rate is added to config fx. Non-'+cur.toUpperCase()+' amounts are never relabelled as '+cur.toUpperCase()+'.');
+    Object.entries(fxDerived).forEach(([c,d])=>warn('fx_derived', c.toUpperCase()+' has no rate in config; using the rate from '+d.n+' Stripe settlement(s): 1 '+cur.toUpperCase()+' \u2248 '+Math.round(1/d.rate).toLocaleString('en-US')+' '+c.toUpperCase()+'. Add it to config fx to fix it.'));
 
     const cu=parseCSV(raw.customers,{skipTitle:true,delim:';'});
     const excl=cfg.exclusions||{customerIds:[],funnelValues:[]};
@@ -1233,7 +1245,7 @@ tbody tr:hover .fz{background:#111c34}
 </script>
 <script>
 (function(){"use strict";
-var CONFIG={"startDate": "2026-08-27", "currency": "USD", "currencyNote": "Dashboard is USD. Payments 'Converted Amount' is converted from its 'Converted Currency' (USD or GBP settlement). Customer 'Total Spend' is in the account default currency (GBP) and is converted with fx.gbp.", "fx": {"usd": 1, "eur": 1.145, "gbp": 1.334, "cad": 0.711, "aud": 0.711, "brl": 0.196, "ils": 0.3, "zar": 0.0618, "jpy": 0.0067, "chf": 1.24, "mxn": 0.054}, "haircut": null, "haircutNote": "null => computed at runtime as historical net / gross successful revenue (spec default).", "cpaThresholds": {"green": 51, "lightGreen": 60, "yellow": 100}, "historicalMinCohort": 15, "exclusions": {"customerIds": [], "funnelValues": []}, "metaAliases": {"02.09.2026_DogTalk_ChatbotAI_YS_CBO_HV_Test_HairstyleW2W-US": "02.09.2026_DogTalk_ChatbotAI_YS_CBO_HV_Test_HairstyleW2W-US5"}, "families": [{"key": "trialMonthly", "label": "1-Week Trial Monthly", "shortLabel": "Trial+4wk", "productId": "prod_V4SM3bXFQkmqxc", "priceId": "price_1U4JRaP26CHyt4yXYpWee2ii", "requireTrial": true, "entryFromTrial": true, "renewalAmount": 38.73, "cadenceDays": 28, "trialOffsetDays": 7, "monthsPerStep": 1, "hasConverted": true, "milestones": ["Converted", "M1", "M2", "M3", "M6", "M9", "M12"], "benchmark": {"0": 100, "1": 50, "2": 34, "3": 25, "4": 18, "5": 14, "6": 10, "7": 7, "8": 5, "9": 4, "10": 3, "11": 2, "12": 1}, "benchmarks": {"optimistic": {"0": 100, "1": 50, "2": 34, "3": 25, "4": 18, "5": 14, "6": 10, "7": 7, "8": 5, "9": 4, "10": 3, "11": 2, "12": 1}, "realistic": {"0": 100, "1": 50, "2": 26, "3": 16, "4": 10, "5": 8, "6": 6, "7": 4, "8": 3, "9": 2, "10": 1, "11": 1, "12": 0}, "pessimistic": {"0": 100, "1": 50, "2": 22, "3": 12, "4": 8, "5": 7, "6": 5, "7": 3, "8": 2, "9": 1, "10": 0, "11": 0, "12": 0}}}, {"key": "monthly", "label": "intro+4wk", "shortLabel": "intro+4wk", "productId": "prod_V4SM3bXFQkmqxc", "priceId": "price_1U4JRaP26CHyt4yXYpWee2ii", "requireTrial": false, "entryAmount": 38.73, "renewalAmount": 38.73, "cadenceDays": 28, "trialOffsetDays": 0, "monthsPerStep": 1, "hasConverted": false, "milestones": ["M1", "M2", "M3", "M6", "M9", "M12"], "benchmark": {"0": 100, "1": 50, "2": 30, "3": 25, "4": 21, "5": 17, "6": 14, "7": 12, "8": 10, "9": 8, "10": 7, "11": 5, "12": 4}, "benchmarks": {"optimistic": {"0": 100, "1": 50, "2": 30, "3": 25, "4": 21, "5": 17, "6": 14, "7": 12, "8": 10, "9": 8, "10": 7, "11": 5, "12": 4}, "realistic": {"0": 100, "1": 50, "2": 23, "3": 15, "4": 9, "5": 8, "6": 6, "7": 4, "8": 3, "9": 2, "10": 1, "11": 1, "12": 0}, "pessimistic": {"0": 100, "1": 50, "2": 20, "3": 10, "4": 7, "5": 6, "6": 5, "7": 3, "8": 2, "9": 1, "10": 0, "11": 0, "12": 0}}}, {"key": "quarterly", "label": "intro+12wk", "shortLabel": "intro+12wk", "productId": "prod_V4SPpPnN9nulvQ", "priceId": "price_1U4JUuP26CHyt4yXMrdPMjuc", "requireTrial": null, "entryAmount": 67.48, "renewalAmount": 67.48, "cadenceDays": 84, "trialOffsetDays": 0, "monthsPerStep": 3, "hasConverted": false, "milestones": ["M3", "M6", "M9", "M12"], "benchmark": {"0": 100, "3": 50, "6": 20, "9": 7, "12": 5}, "benchmarks": {"optimistic": {"0": 100, "3": 50, "6": 20, "9": 7, "12": 5}, "realistic": {"0": 100, "3": 50, "6": 12, "9": 6, "12": 5}, "pessimistic": {"0": 100, "3": 50, "6": 10, "9": 5, "12": 4}}}, {"key": "annual", "label": "Annual", "shortLabel": "Annual", "requireTrial": null, "entryAmount": null, "renewalAmount": null, "cadenceDays": 364, "trialOffsetDays": 0, "monthsPerStep": 12, "hasConverted": false, "milestones": ["M12"], "benchmark": {"0": 100, "12": 35}, "benchmarks": {"optimistic": {"0": 100, "12": 35}, "realistic": {"0": 100, "12": 35}, "pessimistic": {"0": 100, "12": 35}}}], "scenarios": ["optimistic", "realistic", "pessimistic"], "defaultScenario": "optimistic", "fxNote": "Current market mid rates (USD per 1 unit), fetched 2026-09; payments are already settlement-USD, so FX mainly clears non-USD price/sub amounts.", "totalSpendCurrency": "gbp", "billing": {"defaultFunnel": "hairstyle-1dq", "funnelMap": {"01M4B9J0V40WR68JZ9X343W3R5": "hairstyle-1dq", "01M3Y1QTD1SZXWZAR59ZQDKEG5": "hairstyle-1b"}, "retryWindowDays": 14, "_note": "Billing purchases go to hairstyle-1dq (100% segment). fx for JPY/CHF/MXN are approximate and only used when a billing payment has no matching Stripe payment."}}, DEFAULT_B64={}, STORE_KEY="cohort_dashboard_v3";
+var CONFIG={"startDate": "2026-08-27", "currency": "USD", "currencyNote": "Dashboard is USD. Payments 'Converted Amount' is converted from its 'Converted Currency' (USD or GBP settlement). Customer 'Total Spend' is in the account default currency (GBP) and is converted with fx.gbp.", "fx": {"usd": 1, "eur": 1.145, "gbp": 1.334, "cad": 0.711, "aud": 0.711, "brl": 0.196, "ils": 0.3, "zar": 0.0618, "jpy": 0.0067, "chf": 1.24, "mxn": 0.054, "cop": 0.000317}, "haircut": null, "haircutNote": "null => computed at runtime as historical net / gross successful revenue (spec default).", "cpaThresholds": {"green": 51, "lightGreen": 60, "yellow": 100}, "historicalMinCohort": 15, "exclusions": {"customerIds": [], "funnelValues": []}, "metaAliases": {"02.09.2026_DogTalk_ChatbotAI_YS_CBO_HV_Test_HairstyleW2W-US": "02.09.2026_DogTalk_ChatbotAI_YS_CBO_HV_Test_HairstyleW2W-US5"}, "families": [{"key": "trialMonthly", "label": "1-Week Trial Monthly", "shortLabel": "Trial+4wk", "productId": "prod_V4SM3bXFQkmqxc", "priceId": "price_1U4JRaP26CHyt4yXYpWee2ii", "requireTrial": true, "entryFromTrial": true, "renewalAmount": 38.73, "cadenceDays": 28, "trialOffsetDays": 7, "monthsPerStep": 1, "hasConverted": true, "milestones": ["Converted", "M1", "M2", "M3", "M6", "M9", "M12"], "benchmark": {"0": 100, "1": 50, "2": 34, "3": 25, "4": 18, "5": 14, "6": 10, "7": 7, "8": 5, "9": 4, "10": 3, "11": 2, "12": 1}, "benchmarks": {"optimistic": {"0": 100, "1": 50, "2": 34, "3": 25, "4": 18, "5": 14, "6": 10, "7": 7, "8": 5, "9": 4, "10": 3, "11": 2, "12": 1}, "realistic": {"0": 100, "1": 50, "2": 26, "3": 16, "4": 10, "5": 8, "6": 6, "7": 4, "8": 3, "9": 2, "10": 1, "11": 1, "12": 0}, "pessimistic": {"0": 100, "1": 50, "2": 22, "3": 12, "4": 8, "5": 7, "6": 5, "7": 3, "8": 2, "9": 1, "10": 0, "11": 0, "12": 0}}}, {"key": "monthly", "label": "intro+4wk", "shortLabel": "intro+4wk", "productId": "prod_V4SM3bXFQkmqxc", "priceId": "price_1U4JRaP26CHyt4yXYpWee2ii", "requireTrial": false, "entryAmount": 38.73, "renewalAmount": 38.73, "cadenceDays": 28, "trialOffsetDays": 0, "monthsPerStep": 1, "hasConverted": false, "milestones": ["M1", "M2", "M3", "M6", "M9", "M12"], "benchmark": {"0": 100, "1": 50, "2": 30, "3": 25, "4": 21, "5": 17, "6": 14, "7": 12, "8": 10, "9": 8, "10": 7, "11": 5, "12": 4}, "benchmarks": {"optimistic": {"0": 100, "1": 50, "2": 30, "3": 25, "4": 21, "5": 17, "6": 14, "7": 12, "8": 10, "9": 8, "10": 7, "11": 5, "12": 4}, "realistic": {"0": 100, "1": 50, "2": 23, "3": 15, "4": 9, "5": 8, "6": 6, "7": 4, "8": 3, "9": 2, "10": 1, "11": 1, "12": 0}, "pessimistic": {"0": 100, "1": 50, "2": 20, "3": 10, "4": 7, "5": 6, "6": 5, "7": 3, "8": 2, "9": 1, "10": 0, "11": 0, "12": 0}}}, {"key": "quarterly", "label": "intro+12wk", "shortLabel": "intro+12wk", "productId": "prod_V4SPpPnN9nulvQ", "priceId": "price_1U4JUuP26CHyt4yXMrdPMjuc", "requireTrial": null, "entryAmount": 67.48, "renewalAmount": 67.48, "cadenceDays": 84, "trialOffsetDays": 0, "monthsPerStep": 3, "hasConverted": false, "milestones": ["M3", "M6", "M9", "M12"], "benchmark": {"0": 100, "3": 50, "6": 20, "9": 7, "12": 5}, "benchmarks": {"optimistic": {"0": 100, "3": 50, "6": 20, "9": 7, "12": 5}, "realistic": {"0": 100, "3": 50, "6": 12, "9": 6, "12": 5}, "pessimistic": {"0": 100, "3": 50, "6": 10, "9": 5, "12": 4}}}, {"key": "annual", "label": "Annual", "shortLabel": "Annual", "requireTrial": null, "entryAmount": null, "renewalAmount": null, "cadenceDays": 364, "trialOffsetDays": 0, "monthsPerStep": 12, "hasConverted": false, "milestones": ["M12"], "benchmark": {"0": 100, "12": 35}, "benchmarks": {"optimistic": {"0": 100, "12": 35}, "realistic": {"0": 100, "12": 35}, "pessimistic": {"0": 100, "12": 35}}}], "scenarios": ["optimistic", "realistic", "pessimistic"], "defaultScenario": "optimistic", "fxNote": "Current market mid rates (USD per 1 unit), fetched 2026-09; payments are already settlement-USD, so FX mainly clears non-USD price/sub amounts.", "totalSpendCurrency": "gbp", "billing": {"defaultFunnel": "hairstyle-1dq", "funnelMap": {"01M4B9J0V40WR68JZ9X343W3R5": "hairstyle-1dq", "01M3Y1QTD1SZXWZAR59ZQDKEG5": "hairstyle-1b"}, "retryWindowDays": 14, "_note": "Billing purchases go to hairstyle-1dq (100% segment). fx for JPY/CHF/MXN are approximate and only used when a billing payment has no matching Stripe payment."}}, DEFAULT_B64={}, STORE_KEY="cohort_dashboard_v3";
 function dec(s){ if(!s)return""; try{var b=atob(s),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return new TextDecoder("utf-8").decode(a);}catch(e){return"";} }
 function enc(str){var b=new TextEncoder().encode(str),s="";for(var i=0;i<b.length;i++)s+=String.fromCharCode(b[i]);return btoa(s);}
 var SLOTS=[["subs","Subscriptions","Stripe · Product/Price, Created, Trial Start, ff_trial_price_id"],
@@ -1631,7 +1643,7 @@ async function ensureSnapshots(){ if(ensureSnapshots.done||!window.__api||!LIVE)
   var wid='live_'+dDay;
   if(!ids[wid] && (!lastW || dAsOf-lastW>=7*86400000-60000)) todo.push({id:wid,kind:'weekly',label:'Live forecast, data through '+dDay,cutoff:null,dataDate:dAsOf});
   for(var i=0;i<todo.length;i++){ var t=todo[i]; busy(true); await new Promise(function(r){setTimeout(r,60);});
-   var snap=Engine.snapshot(rawObj(),CONFIG,{id:t.id,kind:t.kind,label:t.label,cutoff:t.cutoff,build:'2026-10-23 16:19 UTC'}); snap.cutoff=(t.kind==='weekly')?t.dataDate:t.cutoff; busy(false);
+   var snap=Engine.snapshot(rawObj(),CONFIG,{id:t.id,kind:t.kind,label:t.label,cutoff:t.cutoff,build:'2026-11-04 11:57 UTC'}); snap.cutoff=(t.kind==='weekly')?t.dataDate:t.cutoff; busy(false);
    var res=await window.__api.save(snap); dlog('snapshot '+t.id+': '+(res&&res.saved?'saved':'already existed')); SNAPCACHE[t.id]=snap; }
   if(todo.length){ SNAPS=await window.__api.list(); fillHistory(); }
   var steps=SNAPS.filter(function(x){return x.kind==='step';}); for(var j=0;j<steps.length;j++){ try{ await getSnap(steps[j].id); }catch(e){ dlog('load '+steps[j].id+': '+e.message); } }
@@ -1717,7 +1729,7 @@ function buildScenarioBar(){var bar=document.getElementById("scenarioBar");var s
 
 (function(){ function show(msg){ var t=document.getElementById('errToast'); if(!t){ t=document.createElement('div'); t.id='errToast'; t.className='errtoast'; document.body.appendChild(t);
   t.addEventListener('click',function(){ t.style.display='none'; }); }
-  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-10-23 16:19 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
+  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-11-04 11:57 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
  window.addEventListener('error',function(e){ show((e.message||'error')+(e.lineno?(' @'+e.lineno+':'+(e.colno||0)):'')); });
  window.addEventListener('unhandledrejection',function(e){ show('promise: '+((e.reason&&e.reason.message)||e.reason)); });
  window.__showErr=show; })();
@@ -1725,7 +1737,7 @@ var __dlog=[]; function dlog(m){ __dlog.push(new Date().toISOString().slice(11,1
 window.dlog=dlog;
 function showDiag(){ function t(f){ try{ return f(); }catch(e){ return 'ERR '+e.message; } }
  var auth=t(function(){ var ss=Object.keys(sessionStorage).filter(function(k){return /auth/.test(k);}), ls=Object.keys(localStorage).filter(function(k){return /auth/.test(k);}); return 'sessionStorage: '+(ss.join(',')||'none')+' | localStorage: '+(ls.join(',')||'none'); });
- var lines=['Build: 2026-10-23 16:19 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
+ var lines=['Build: 2026-11-04 11:57 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
   'Hosted mode: '+!!window.__HOSTED__, 'Boots: '+(window.__bootCount||0),
   'sessionStorage works: '+t(function(){ sessionStorage.setItem('__d','1'); sessionStorage.removeItem('__d'); return 'yes'; }),
   'Auth tokens: '+auth,
