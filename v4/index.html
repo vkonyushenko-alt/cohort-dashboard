@@ -197,7 +197,7 @@ tbody tr:hover .fz{background:#111c34}
 .foot{color:var(--faint);font-size:11px;margin-top:26px;text-align:center}
 </style></head><body><div class="wrap">
 <header class="top">
-  <div class="brand"><h1>Cohort Revenue Model <span class="v2tag">v4</span> <a class="v1link" href="../">open v1 ↗</a><span class="buildtag">build 2026-11-16 10:46 UTC</span></h1>
+  <div class="brand"><h1>Cohort Revenue Model <span class="v2tag">v4</span> <a class="v1link" href="../">open v1 ↗</a><span class="buildtag">build 2026-11-18 11:20 UTC</span></h1>
   <div class="sub"><span id="dataStamp" style="color:var(--faint)"></span><br>AI hairstyle app · Stripe + Meta · cumulative-revenue ROAS with continuation-rate forecasting</div></div>
   <div class="stat-strip" id="statStrip"></div>
 </header>
@@ -270,7 +270,7 @@ tbody tr:hover .fz{background:#111c34}
 <section class="view" data-view="audit"><div class="view-head"><h2>Audit</h2><span class="desc">Per-week reconciliation · no customer-level PII</span></div><div class="tablecard"><table id="tbl-audit"></table></div></section>
 <section class="view" data-view="methodology"><div class="doc" id="docMethodology"></div></section>
 
-<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-11-16 10:46 UTC · v4 · authenticated · data loaded from a protected backend</div>
+<div class="foot"><a href="#" onclick="window.__showDiag&&window.__showDiag();return false;" style="color:var(--muted)">Diagnostics</a> \u00b7 Built 2026-11-18 11:20 UTC · v4 · authenticated · data loaded from a protected backend</div>
 </div>
 <script>
 /* Cohort revenue model — compute engine v3 (spec-aligned). Pure functions, no DOM. */
@@ -372,13 +372,24 @@ tbody tr:hover .fz{background:#111c34}
   // for refunds, disputes and settled (converted) amounts: each billing payment is joined to its Stripe
   // payment by order_id. Customers already present in Stripe (same ff_session_id) are not added twice.
   const ZERO_DEC=new Set(['jpy','krw','vnd','clp','isk','ugx','xof','xaf','pyg','rwf','kmf','gnf','mga','djf','bif','vuv','xpf']);
-  const _bm={key:null,res:null};
+  const _bmc={live:{key:null,res:null}, cf:{key:null,res:null}};
   function csvCell(v){ v=(v==null?'':String(v)); return /[;"\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
   function fmtDT(ms){ const d=new Date(ms); return d.toISOString().slice(0,19).replace('T',' '); }
   function appendRows(text, header, objs){ if(!objs.length) return text; const lines=objs.map(o=>header.map(h=>csvCell(o[h])).join(';'));
     return String(text).replace(/\s*$/,'')+'\n'+lines.join('\n')+'\n'; }
+  // FunnelFox Smart retries: <=7-day interval (the T2P charge after a 1-week trial) ends on day 7;
+  // <=31-day interval on day 20; longer on day 33. 'past_due' only while an attempt is still ahead.
+  function retryState(mits, introW, nextW, now){
+    const ok=x=>x.status==='SETTLED', bad=x=>x.status==='DECLINED'||x.status==='FAILED';
+    const att=mits.filter(x=>ok(x)||bad(x)); if(!att.length || ok(att[att.length-1])) return 'active';
+    let i=att.length-1; while(i>0 && bad(att[i-1])) i--;
+    const c0=att[i].t, mitPaid=att.slice(0,i).some(ok);
+    const lastDay=(!mitPaid && introW===1) ? 7 : (nextW<=5 ? 20 : 33);
+    const span=(att[att.length-1].t-c0)/DAY, age=(now-c0)/DAY;
+    return (span < lastDay-0.5 && age < lastDay+1.5) ? 'past_due' : 'canceled'; }
   function mergeBilling(raw, cfg){
     if(!raw || !raw.billing || !String(raw.billing).trim()) return raw;
+    const cfMode=!!cfg._cf; const _bm=_bmc[cfMode?'cf':'live'];
     const key=[String(raw.billing).length,String(raw.billingPrices||'').length,String(raw.customers||'').length,String(raw.subs||'').length,String(raw.payments||'').length,String(raw.prices||'').length].join('|');
     if(_bm.key===key && _bm.src===raw.billing && _bm.cus===raw.customers && _bm.pay===raw.payments) return _bm.res;
     const bc=cfg.billing||{}; const fx=cfg.fx||{}; const tsc=(cfg.totalSpendCurrency||cfg.currency||'usd').toLowerCase();
@@ -414,7 +425,27 @@ tbody tr:hover .fz{background:#111c34}
       if(!P) stats.unknownPrice++;
       const funnel=(bc.funnelMap&&bc.funnelMap[md.ff_funnel_id])||bc.defaultFunnel||String(md.ff_campaign_path||'').replace(/^\//,'')||'billing';
       const custId='bil_'+cid; let netUSD=0, refUSD=0, lostUSD=0, paidCount=0;
-      xs.forEach(x=>{ if(x.status==='PENDING'){ stats.pending++; return; } if(x.status!=='SETTLED' && x.status!=='DECLINED') return;
+      const introW=P?num(P['Intro Weeks']):1, nextW=P?num(P['Next Weeks']):4, curP=P?(P['Currency']||'').toLowerCase():paidCit.cur;
+      // pause: a Stripe renewal declined inside the pause window (the Stripe account was blocked)
+      let pauseStatus='', pf=null;
+      if(pzA && pzB){ pf=xs.find(x=>x.kind==='mit' && x.psp==='STRIPE' && x.status==='DECLINED' && x.t>=pzA && x.t<=pzB)||null;
+        if(pf){ stats.pause.affected++;
+          if(xs.some(x=>x.psp==='ADYEN' && x.status==='SETTLED' && x.t>pf.t)){ pauseStatus='recovered'; stats.pause.recovered++; }
+          else if(retryState(xs.filter(x=>x.kind==='mit'), introW, nextW, stats.to)==='past_due'){ pauseStatus='pending'; stats.pause.pending++; }
+          else { pauseStatus='lost'; stats.pause.lost++; } } }
+      // Projection mode ("as if the pause had not happened"): a recovered charge counts as a full-price payment;
+      // for lost / pending customers the charge that hit the pause stays open and is projected at normal rates.
+      let xsUse=xs, obsEnd=null;
+      if(cfMode && pf){
+        if(pauseStatus==='recovered'){ const before=xs.filter(x=>x.status==='SETTLED' && x.t<pf.t); const lp=before.length?before[before.length-1].t:-Infinity;
+          const cycle=xs.filter(x=>x.kind==='mit' && x.t>lp); const full=Math.max.apply(null, cycle.map(x=>x.amount));
+          const rr=xs.find(x=>x.psp==='ADYEN' && x.status==='SETTLED' && x.t>pf.t);
+          xsUse=xs.map(x=>x===rr ? Object.assign({}, x, {amount:full}) : x); }
+        else { // charge first attempted inside the pause: still open (not reached); attempted before it: in retry when the pause hit
+          const before=xs.filter(x=>x.status==='SETTLED' && x.t<pf.t); const lp=before.length?before[before.length-1].t:-Infinity;
+          const c0=(xs.find(x=>x.kind==='mit' && x.t>lp)||pf).t; const fz = c0>=pzA ? c0 : pf.t;
+          xsUse=xs.filter(x=>x.t<fz); obsEnd = c0>=pzA ? c0-60000 : pf.t; } }
+      xsUse.forEach(x=>{ if(x.status==='PENDING'){ stats.pending++; return; } if(x.status!=='SETTLED' && x.status!=='DECLINED' && x.status!=='FAILED') return;
         const s=(x.psp==='ADYEN')?null:(byOrder[x.order]||[])[0]; if(x.psp==='ADYEN') stats.adyenPayments++; else if(s) stats.matchedStripe++; else stats.unmatched++;
         let refunded=x.refunded, rdate='';
         if(s && num(s['Amount Refunded'])>refunded+0.004){ refunded=num(s['Amount Refunded']); stats.refundsFromStripe++; }
@@ -423,21 +454,17 @@ tbody tr:hover .fz{background:#111c34}
         if(s && (s['Converted Amount']||'')!=='' && num(s['Converted Amount'])>0){ camt=num(s['Converted Amount']); ccur=(s['Converted Currency']||x.cur).toLowerCase();
           cref = num(s['Converted Amount Refunded']) || (x.amount>0 ? camt*refunded/x.amount : 0); }
         else { camt=x.amount; ccur=x.cur; cref=refunded; }
-        let st; if(x.status==='DECLINED') st='Failed'; else st=(refunded>=x.amount-0.004)?'Refunded':'Paid';
+        let st; if(x.status!=='SETTLED') st='Failed'; else st=(refunded>=x.amount-0.004)?'Refunded':'Paid';
         newPays.push({ 'id':x.id, 'Created date (UTC)':fmtDT(x.t), 'Amount':x.amount.toFixed(ZERO_DEC.has(x.cur)?0:2), 'Amount Refunded':refunded.toFixed(ZERO_DEC.has(x.cur)?0:2), 'Currency':x.cur,
           'Converted Amount':camt.toFixed(2), 'Converted Amount Refunded':cref.toFixed(2), 'Converted Currency':ccur, 'Status':st, 'Customer ID':custId,
-          'Decline Reason': s?(s['Decline Reason']||''):(x.status==='DECLINED'?'declined':''), 'Refunded date (UTC)':rdate, 'PaymentIntent ID': s?(s['PaymentIntent ID']||''):'' , 'order_id (metadata)':x.order, 'Processor (billing)':x.psp });
+          'Decline Reason': s?(s['Decline Reason']||''):(x.status!=='SETTLED'?'declined':''), 'Refunded date (UTC)':rdate, 'PaymentIntent ID': s?(s['PaymentIntent ID']||''):'' , 'order_id (metadata)':x.order, 'Processor (billing)':x.psp });
         stats.payments++;
         const r=rate(ccur)||1;
         if(x.status==='SETTLED'){ const net=(camt-cref)*r; netUSD+=net; refUSD+=cref*r; if(net>0.005) paidCount++; }
         if(s && (s['Dispute Status']||'').toLowerCase()==='lost'){ lostUSD+=num(s['Disputed Amount'])*(rate(s['Currency'])||1); stats.disputesLost++; }
       });
-      // subscription status: payment retry while the latest renewal attempt failed within the retry window
-      const mits=xs.filter(x=>x.kind==='mit' && (x.status==='SETTLED'||x.status==='DECLINED'));
-      let status='active';
-      if(mits.length && mits[mits.length-1].status==='DECLINED'){ let i=mits.length-1; while(i>0 && mits[i-1].status==='DECLINED') i--;
-        const firstDecl=mits[i].t; const lastT=Math.max.apply(null,rows.map(y=>y.t)); status=((lastT-firstDecl)/DAY<=retryDays)?'past_due':'canceled'; }
-      const introW=P?num(P['Intro Weeks']):1, nextW=P?num(P['Next Weeks']):4, curP=P?(P['Currency']||'').toLowerCase():paidCit.cur;
+      // subscription status: in retry only while FunnelFox's schedule still has an attempt ahead
+      const status=retryState(xsUse.filter(x=>x.kind==='mit'), introW, nextW, stats.to);
       const recId='bp_'+pid+'_rec', introId='bp_'+pid+'_intro';
       if(P && !priceSeen[pid]){ priceSeen[pid]=1;
         newPrices.push({'Price ID':recId,'Product ID':P['Product ID']||'','Amount':P['Next Amount'],'Currency':curP,'Interval':'week','Interval Count':String(nextW)});
@@ -448,23 +475,11 @@ tbody tr:hover .fz{background:#111c34}
       // group: billing customers whose first purchase went through Stripe moved to Adyen later; Adyen-first = new traffic
       const psp=((cits.find(x=>x.status==='SETTLED')||first).psp)||'';
       const group = psp==='ADYEN' ? 'adyen' : 'moved'; if(group==='adyen') stats.adyenCustomers++;
-      // pause: a Stripe renewal declined inside the pause window (the Stripe account was blocked)
-      let pauseStatus='';
-      if(pzA && pzB){ const pf=xs.find(x=>x.kind==='mit' && x.psp==='STRIPE' && x.status==='DECLINED' && x.t>=pzA && x.t<=pzB);
-        if(pf){ stats.pause.affected++;
-          if(xs.some(x=>x.psp==='ADYEN' && x.status==='SETTLED' && x.t>pf.t)){ pauseStatus='recovered'; stats.pause.recovered++; }
-          else { // retries left? FunnelFox Smart schedule: <=7-day interval -> last retry day 7; <=31 days -> day 20; longer -> day 33
-            const paidX=xs.filter(x=>x.status==='SETTLED'); const lastPaid=paidX.length?paidX[paidX.length-1].t:0;
-            const cyc=xs.filter(x=>x.kind==='mit' && x.t>lastPaid && (x.status==='DECLINED'||x.status==='FAILED'));
-            const mitPaid=xs.some(x=>x.kind==='mit' && x.status==='SETTLED');
-            const lastDay = (!mitPaid && introW===1) ? 7 : (nextW<=5 ? 20 : 33);
-            const c0=cyc.length?cyc[0].t:pf.t; const span=cyc.length?(cyc[cyc.length-1].t-c0)/DAY:0; const age=(stats.to-c0)/DAY;
-            if(span < lastDay-0.5 && age < lastDay+1.5){ pauseStatus='pending'; stats.pause.pending++; } else { pauseStatus='lost'; stats.pause.lost++; } } } }
       const g=rate(tsc)||1;
       newCus.push({ 'id':custId, 'Created (UTC)':fmtDT(first.t).slice(0,16), 'Payment Count':String(paidCount), 'Total Spend':(netUSD/g).toFixed(2),
         'Refunded Volume':(refUSD/g).toFixed(2), 'Dispute Losses':(lostUSD/g).toFixed(2), 'Address Country':paidCit.country||'', 'Card Issue Country':paidCit.cardCountry||'',
         'utm_campaign (metadata)':md.utm_campaign||'', 'utm_term (metadata)':md.utm_term||'', 'utm_source (metadata)':md.utm_source||'', 'utm_medium (metadata)':md.utm_medium||'',
-        'utm_content (metadata)':md.utm_content||'', 'ff_session_id (metadata)':sid, 'ff_funnel (metadata)':funnel, 'billing_group':group, 'pause_status':pauseStatus });
+        'utm_content (metadata)':md.utm_content||'', 'ff_session_id (metadata)':sid, 'ff_funnel (metadata)':funnel, 'billing_group':group, 'pause_status':pauseStatus, 'obs_end': obsEnd?fmtDT(obsEnd):'' });
       stats.customers++;
     });
     const hdr=(P,need)=>{ const h=P.header.slice(); need.forEach(k=>{ if(h.indexOf(k)<0) h.push(k); }); return h; };
@@ -472,7 +487,7 @@ tbody tr:hover .fz{background:#111c34}
     const withHeader=(text,P,need)=>{ const h=hdr(P,need); if(h.length===P.header.length) return {text,h};
       const lines=String(text).split(/\r\n|\n|\r/); let idx=lines.findIndex(l=>l.indexOf(P.header[0])>=0 && l.split(';').length>=P.header.length-1); if(idx<0) idx=0;
       lines[idx]=lines[idx]+';'+h.slice(P.header.length).map(csvCell).join(';'); return {text:lines.join('\n'),h}; };
-    const cusN=withHeader(raw.customers||'',SC,['id','Created (UTC)','Payment Count','Total Spend','Refunded Volume','Dispute Losses','Address Country','Card Issue Country','billing_group','pause_status','utm_campaign (metadata)','utm_term (metadata)','ff_session_id (metadata)','ff_funnel (metadata)']);
+    const cusN=withHeader(raw.customers||'',SC,['id','Created (UTC)','Payment Count','Total Spend','Refunded Volume','Dispute Losses','Address Country','Card Issue Country','billing_group','pause_status','obs_end','utm_campaign (metadata)','utm_term (metadata)','ff_session_id (metadata)','ff_funnel (metadata)']);
     const subN=withHeader(raw.subs||'',SS,['Customer ID','Status','Plan','Product ID','Amount','Currency','Created (UTC)','Trial Start (UTC)','Canceled At (UTC)','Cancellation Reason','ff_trial_price_id (metadata)']);
     const payN=withHeader(raw.payments||'',SP,['id','Created date (UTC)','Amount','Amount Refunded','Currency','Converted Amount','Converted Amount Refunded','Converted Currency','Status','Customer ID','Decline Reason','Refunded date (UTC)','Processor (billing)']);
     const prN=withHeader(raw.prices||'',PR,['Price ID','Product ID','Amount','Currency','Interval','Interval Count']);
@@ -546,6 +561,7 @@ tbody tr:hover .fz{background:#111c34}
     let customers=cu.rows.map(r=>({ id:r['id'], created:parseDate(r['Created (UTC)']),
       country: countryCol ? pickCountry(r) : null,
       group: /^bil_/.test(r['id']||'') ? (((r['billing_group']||'').trim())||'moved') : 'stripe', pauseStatus:(r['pause_status']||'').trim(),
+      obsEnd: (r['obs_end']||'').trim() ? parseDate(r['obs_end']) : null,
       totalSpend:num(r['Total Spend']), paymentCount:num(r['Payment Count']),
       refunded:num(r['Refunded Volume']), disputes:num(r['Dispute Losses']), currency:cur,
       utm_campaign:(r['utm_campaign (metadata)']||'').trim(), utm_term:(r['utm_term (metadata)']||'').trim(),
@@ -758,7 +774,7 @@ tbody tr:hover .fz{background:#111c34}
 
     // family-wide continuation rates (Methodology 1): observed step-down rate for each renewal, from fully-closed cohorts (>=minCohort)
     const famCont={};
-    const rateBase = filtered.some(c=>c.group!=='moved') ? filtered.filter(c=>c.group!=='moved') : filtered;
+    const rateBase = (cfg._cf || !filtered.some(c=>c.group!=='moved')) ? filtered : filtered.filter(c=>c.group!=='moved');
     cfg.families.forEach(f=>{ const fm=rateBase.filter(c=>c.starter&&c.starter.key===f.key);
       famCont[f.key]=continuationRates(fm, f, asOf, cfg.historicalMinCohort||15, c=>(subsBy[c.id]||[]).some(x=>x.status==='past_due')); });
 
@@ -1044,6 +1060,7 @@ tbody tr:hover .fz{background:#111c34}
     const payers=members.filter(c=>c.starter&&c.netPaidCount>=2), p2=d2.filter(c=>c.netPaidCount>=2);
     const pr2=p2.filter(c=>c.netPaidCount<3&&pd(c));
     row.step2={pct:p2.length?c2/p2.length*100:null, paid:c2, due:p2.length, retrying:pr2.length, est:retryEst(pr2,ctx), all:payers.length, base:'payers'};
+    row.groups=groupInfo(members);
     return row;
   }
 
@@ -1215,7 +1232,34 @@ tbody tr:hover .fz{background:#111c34}
     return rows;
   }
 
+  // Projections vs actuals after the payments pause: actual columns come from the real data; projection columns
+  // (ROAS by month, Pred LTV, projected retention, the rates behind them) from a second run in which the pause
+  // never happened. Without a pause in the data this is a single run.
   function compute(raw, cfg, selectedCampaigns, scenario, selectedCountries, opts){
+    const live=computeOne(raw, cfg, selectedCampaigns, scenario, selectedCountries, opts);
+    const bs=live.meta.billingStats;
+    if(!(cfg.billing && cfg.billing.pause && bs && bs.pause && bs.pause.affected)) return live;
+    const cf=computeOne(raw, Object.assign({}, cfg, {_cf:true}), selectedCampaigns, scenario, selectedCountries, opts);
+    return mergeProjections(live, cf);
+  }
+  function mergeProjections(live, cf){
+    const key=r=>[r.cohortStart, r.campaign, r.weekKey, r.adId, r.adName, r.label].join('|');
+    const affected=r=>r.groups && ((r.groups.recovered||0)+(r.groups.pending||0)+(r.groups.lost||0))>0;
+    ['monthly','weekly','byCampaign','byCampaignWeekly','byTerm','byTermWeekly','byAdName'].forEach(t=>{
+      if(!Array.isArray(live[t])||!Array.isArray(cf[t])) return; const m={}; cf[t].forEach(r=>{ m[key(r)]=r; });
+      live[t].forEach(r=>{ const c=m[key(r)]; if(!c) return;
+        r.roasPct=c.roasPct; r.predLTV=c.predLTV; r.roasFactual=Object.assign({}, c.roasFactual);
+        if(affected(r)){ Object.keys(r.roasFactual).forEach(k=>{ r.roasFactual[k]=false; }); r.asIfNoPause=true; } }); });
+    ['retTrial','retMonthly','retQuarterly'].forEach(t=>{ const L=live[t], C=cf[t]; if(!L||!C||!L.rows) return; const m={}; (C.rows||[]).forEach(r=>{ m[r.cohortStart]=r; });
+      L.rows.forEach(r=>{ const c=m[r.cohortStart]; if(!c) return; r.predLTV=c.predLTV;
+        Object.keys(r.cells||{}).forEach(k=>{ if(r.cells[k] && r.cells[k].state==='proj' && c.cells && c.cells[k]) r.cells[k]=c.cells[k]; });
+        if(affected(r)) r.asIfNoPause=true; });
+      L.continuation=C.continuation; });
+    live.rateSources=cf.rateSources; live.scenarioFit=cf.scenarioFit; live.renewalDiffs=cf.renewalDiffs;
+    live.meta.projectionsAsIfNoPause=true;
+    return live;
+  }
+  function computeOne(raw, cfg, selectedCampaigns, scenario, selectedCountries, opts){
     const scen = scenario || cfg.defaultScenario || 'optimistic';
     const scfg = Object.assign({}, cfg, { _cutoff:(opts&&opts.cutoff)||null, families: cfg.families.map(function(f){
       const b=(f.benchmarks&&f.benchmarks[scen])?f.benchmarks[scen]:f.benchmark;
@@ -1347,9 +1391,9 @@ function payMode(){ var m=result&&result.meta; return !!(m&&(m.stripeFrozen||(m.
 function grpNote(r){ if(!payMode()||!r||!r.groups) return ''; var g=r.groups;
  if(g.kind==='stripe' && result.meta.stripeFrozen) return '<span class="grpnote stopped" data-tip="Customers in this cohort paid through Stripe only. Stripe renewals stopped on '+new Date(result.meta.stripeFrozen).toISOString().slice(0,10)+'; numbers are shown as of that date and projections show what renewals would have brought had they continued.">Stripe \u00b7 renewals stopped</span>';
  if(g.kind==='moved'){ var parts=[]; if(g.recovered) parts.push(g.recovered+' recovered'); if(g.pending) parts.push(g.pending+' pending');
-   return '<span class="grpnote moved" data-tip="Billing customers who started on Stripe and moved to Adyen. Recovered = renewal declined on Stripe during the pause, since paid on Adyen. Pending = still has a retry ahead on Adyen. Customers whose retries ran out during the pause count as not converted. This cohort\u2019s rates are not used to project other cohorts.">Moved to Adyen'+(parts.length?' \u00b7 '+parts.join(' \u00b7 '):'')+'</span>'; }
+   return '<span class="grpnote moved" data-tip="Billing customers who started on Stripe and moved to Adyen. Recovered = renewal declined on Stripe during the pause, since paid on Adyen. Pending = still has a retry ahead on Adyen. Customers whose retries ran out during the pause count as not converted. Projections (ROAS by month, Pred LTV) are shown as if the pause had not happened: recovered customers count as full-price conversions, lost and pending ones at normal rates. Net to date, ROAS to date and Obs LTV show the real money.">Moved to Adyen'+(parts.length?' \u00b7 '+parts.join(' \u00b7 '):'')+'</span>'; }
  return ''; }
-function stopN(r,factual){ return (payMode()&&result.meta.stripeFrozen&&r&&r.groups&&r.groups.kind==='stripe'&&!factual)?'<span class="stopn">renewals stopped</span>':''; }
+function stopN(r,factual){ if(!payMode()||!r||factual===true) return ''; if(result.meta.stripeFrozen&&r.groups&&r.groups.kind==='stripe') return '<span class="stopn">renewals stopped</span>'; if(r.asIfNoPause) return '<span class="stopn">as if no pause</span>'; return ''; }
 function cohortTable(id,rows,firstHead,showSplit,showLTV,extra){
  var fams=famCols(); extra=extra||{};
  var head='<thead><tr><th class="l fz c1">'+firstHead+'</th>'
@@ -1468,7 +1512,7 @@ function payNote(){ var el=document.getElementById('payNote'); if(!el){ el=docum
  el.style.display='block';
  el.innerHTML='<b>Payments status.</b> '
   +(m.stripeFrozen?('<b>Stripe-only customers:</b> renewals stopped '+d(m.stripeFrozen)+' \u2014 shown as of that date, projections as if renewals had continued. '):'')
-  +(pz.affected?('<b>Billing customers moved Stripe \u2192 Adyen:</b> '+pz.affected+' had a renewal declined during the pause \u2014 '+pz.recovered+' recovered on Adyen, '+pz.pending+' pending, '+pz.lost+' ran out of retries (not converted); their rates are not used for other cohorts\u2019 projections. '):'')
+  +(pz.affected?('<b>Billing customers moved Stripe \u2192 Adyen:</b> '+pz.affected+' had a renewal declined during the pause \u2014 '+pz.recovered+' recovered on Adyen, '+pz.pending+' pending, '+pz.lost+' ran out of retries. Actual columns show the real money (recoveries at the 70%/50% retry amounts); <b>projections are shown as if the pause had not happened</b> (recovered = full-price conversion, lost and pending at normal rates). '):'')
   +(b.adyenCustomers?('<b>New Adyen customers:</b> '+b.adyenCustomers+' so far \u2014 normal view. '):'')
   +(b.adyenPayments?'<span style="color:var(--muted)">No dispute data for Adyen payments yet.</span>':''); }
 function filterNote(){ var el=document.getElementById('filterNote'); if(!el){ el=document.createElement('div'); el.id='filterNote'; el.className='banner warn'; var tb=document.getElementById('tabbar'); tb.parentNode.insertBefore(el,tb); }
@@ -1512,7 +1556,7 @@ function docDataSource(res){var m=res.meta;function d(x){return new Date(x).toIS
  +(m.billingStats?('<div class="block"><h3>Own billing (since the switch from Stripe checkout)</h3><p><b>'+m.billingStats.customers+'</b> billing customers from <b>'+m.billingStats.rows+'</b> payment rows ('+(m.billingStats.from?d(m.billingStats.from):'\u2014')+' \u2192 '+(m.billingStats.to?d(m.billingStats.to):'\u2014')+'). Each billing payment is joined to its Stripe payment by <b>order_id</b> ('+m.billingStats.matchedStripe+' matched, '+m.billingStats.unmatched+' not): Stripe supplies refunds ('+m.billingStats.refundsFromStripe+' found only in Stripe), disputes and the settled USD/GBP amount. Plan and offer come from the billing_prices tab; campaign and ad from the purchase\u2019s UTMs; renewals inherit them through the billing customerId. '+(m.billingStats.skippedDuplicates?m.billingStats.skippedDuplicates+' customer(s) also present in Stripe (same ff_session_id) are counted once. ':'')+(m.asOfNote?'Billing data ends '+new Date(m.asOfNote.billing).toISOString().slice(0,16).replace('T',' ')+' UTC, earlier than Stripe ('+new Date(m.asOfNote.stripe).toISOString().slice(0,16).replace('T',' ')+'), so the dashboard treats the billing end as \u201cnow\u201d: charges due after it are not counted as missed.':'')+'</p></div>'):'')
  +((m.stripeFrozen||(m.billingStats&&m.billingStats.pause&&m.billingStats.pause.affected))?('<div class="block"><h3>Payments pause and the move to Adyen</h3>'
    +(m.stripeFrozen?('<p><b>Stripe-only customers</b> (paid only through Stripe, before own billing): Stripe data ends <b>'+d(m.stripeFrozen)+'</b> and is no longer imported. Their renewals stopped with the Stripe account, so they are measured as of that date: a charge due later counts as <i>not due yet</i>, not as missed. Their projections therefore show what renewals would have brought <b>had they continued</b>, and are marked <i>renewals stopped</i>.</p>'):'')
-   +((m.billingStats&&m.billingStats.pause&&m.billingStats.pause.affected)?('<p><b>Billing customers moved from Stripe to Adyen</b>: renewals declined on Stripe between <b>'+(CONFIG.billing&&CONFIG.billing.pause?CONFIG.billing.pause.start:'')+'</b> and <b>'+(CONFIG.billing&&CONFIG.billing.pause?CONFIG.billing.pause.end:'')+'</b> (the Stripe account was blocked): '+m.billingStats.pause.affected+' customers \u2014 <b>'+m.billingStats.pause.recovered+' recovered</b> on Adyen, <b>'+m.billingStats.pause.pending+' pending</b> (a retry still ahead), '+m.billingStats.pause.lost+' ran out of retries during the pause and count as not converted. Retries follow FunnelFox\u2019s schedule, so many recoveries were charged at 70% or 50% of the price; they are counted at the amount actually paid. These cohorts show their real outcomes but their rates are <b>not used</b> to project other cohorts.</p>'):'')
+   +((m.billingStats&&m.billingStats.pause&&m.billingStats.pause.affected)?('<p><b>Billing customers moved from Stripe to Adyen</b>: renewals declined on Stripe between <b>'+(CONFIG.billing&&CONFIG.billing.pause?CONFIG.billing.pause.start:'')+'</b> and <b>'+(CONFIG.billing&&CONFIG.billing.pause?CONFIG.billing.pause.end:'')+'</b> (the Stripe account was blocked): '+m.billingStats.pause.affected+' customers \u2014 <b>'+m.billingStats.pause.recovered+' recovered</b> on Adyen, <b>'+m.billingStats.pause.pending+' pending</b> (a retry still ahead), '+m.billingStats.pause.lost+' ran out of retries during the pause and count as not converted. Retries follow FunnelFox\u2019s schedule, so many recoveries were charged at 70% or 50% of the price. <b>Actual columns</b> (Net to date, ROAS to date, Obs LTV, actual T2P/M1) show the real money and outcomes. <b>Projections</b> (ROAS by month, Pred LTV, projected retention, and the plan-wide rates used for every cohort) are calculated as if the pause had not happened: recovered customers count as full-price conversions, and for lost and pending customers the charge that hit the pause is projected at normal rates. Customers are shown <i>in retry</i> only while FunnelFox\u2019s schedule still has an attempt ahead (day 7 for the first full-price charge, day 20 for 4-weekly renewals).</p>'):'')
    +((m.billingStats&&m.billingStats.adyenCustomers)?('<p><b>New Adyen customers</b> ('+m.billingStats.adyenCustomers+' so far): normal view.</p>'):'')
    +'<p style="color:var(--muted)">Adyen payments come only from the billing export: refunds made through the billing system are included; disputes are not available for Adyen payments yet (FunnelFox dispute webhooks or an Adyen dispute report would add them).</p></div>'):'')
 +'<div class="block"><h3>Currency</h3><p>Dashboard currency is <b>USD</b>. Payments use Stripe\u2019s <i>Converted Amount</i>, converted from its <i>Converted Currency</i> (USD charges settle in USD; other currencies settle in GBP here). Customer <i>Total Spend</i> is in the account default currency (GBP) and is converted with the GBP rate. Rates are set in <code>config.json \u2192 fx</code>.</p></div>'
@@ -1582,7 +1626,7 @@ function docMethodology(res){ var m=res.meta; var hc=((1-(m.haircutMult||1))*100
    'Billing customers are assigned to <b>hairstyle-1dq</b> (the funnel currently served to 100% of traffic); config.billing.funnelMap can map funnel IDs to other names.'])
  +B('10. Campaigns, ads and countries',[
    'Spend joins campaigns by name (with configured aliases) and ads by <b>Ad ID</b> (ad name only if an ad has no ID \u2014 names are shared by many ads).',
-   'Payments pause (Nov 2026): Stripe-only customers are measured up to the last Stripe data (their renewals stopped), so their projections show the \u201cif renewals continued\u201d value and are marked <b>renewals stopped</b>. Billing customers who moved from Stripe to Adyen show real outcomes with a <b>Moved to Adyen \u00b7 X recovered \u00b7 Y pending</b> label; they are left out of the plan-wide rates that project other cohorts. New Adyen customers are shown normally.',
+   'Payments pause (Nov 2026): Stripe-only customers are measured up to the last Stripe data (their renewals stopped), so their projections show the \u201cif renewals continued\u201d value and are marked <b>renewals stopped</b>. Billing customers who moved from Stripe to Adyen show real outcomes with a <b>Moved to Adyen \u00b7 X recovered \u00b7 Y pending</b> label; their actual columns show the real money, while their projections (and the plan-wide rates) are calculated as if the pause had not happened: recovered customers as full-price conversions, lost and pending ones at normal rates. New Adyen customers are shown normally.',
    'Country filter: customers by <b>card</b> country (the issuing bank\u2019s country; billing-address country when missing \u2014 the two agree for ~97% of customers), spend by Meta <b>delivery</b> country; the banner shows how many customers came from campaigns with no spend in that country.',
    '<b>off since \u2026</b>: no Meta spend in the last 3 days of the data. <b>no Meta spend</b>: the name never matches Meta (e.g. unfilled UTM placeholder).'])
  +B('11. Privacy and access',[
@@ -1706,7 +1750,7 @@ async function ensureSnapshots(){ if(ensureSnapshots.done||!window.__api||!LIVE)
   var wid='live_'+dDay;
   if(!ids[wid] && (!lastW || dAsOf-lastW>=7*86400000-60000)) todo.push({id:wid,kind:'weekly',label:'Live forecast, data through '+dDay,cutoff:null,dataDate:dAsOf});
   for(var i=0;i<todo.length;i++){ var t=todo[i]; busy(true); await new Promise(function(r){setTimeout(r,60);});
-   var snap=Engine.snapshot(rawObj(),CONFIG,{id:t.id,kind:t.kind,label:t.label,cutoff:t.cutoff,build:'2026-11-16 10:46 UTC'}); snap.cutoff=(t.kind==='weekly')?t.dataDate:t.cutoff; busy(false);
+   var snap=Engine.snapshot(rawObj(),CONFIG,{id:t.id,kind:t.kind,label:t.label,cutoff:t.cutoff,build:'2026-11-18 11:20 UTC'}); snap.cutoff=(t.kind==='weekly')?t.dataDate:t.cutoff; busy(false);
    var res=await window.__api.save(snap); dlog('snapshot '+t.id+': '+(res&&res.saved?'saved':'already existed')); SNAPCACHE[t.id]=snap; }
   if(todo.length){ SNAPS=await window.__api.list(); fillHistory(); }
   var steps=SNAPS.filter(function(x){return x.kind==='step';}); for(var j=0;j<steps.length;j++){ try{ await getSnap(steps[j].id); }catch(e){ dlog('load '+steps[j].id+': '+e.message); } }
@@ -1792,7 +1836,7 @@ function buildScenarioBar(){var bar=document.getElementById("scenarioBar");var s
 
 (function(){ function show(msg){ var t=document.getElementById('errToast'); if(!t){ t=document.createElement('div'); t.id='errToast'; t.className='errtoast'; document.body.appendChild(t);
   t.addEventListener('click',function(){ t.style.display='none'; }); }
-  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-11-16 10:46 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
+  t.innerHTML='<b>Something went wrong</b> \u2014 please screenshot this:<br><code>'+String(msg).replace(/</g,'&lt;').slice(0,400)+'</code><br><span style="opacity:.7">build 2026-11-18 11:20 UTC \u00b7 click to dismiss</span>'; t.style.display='block'; }
  window.addEventListener('error',function(e){ show((e.message||'error')+(e.lineno?(' @'+e.lineno+':'+(e.colno||0)):'')); });
  window.addEventListener('unhandledrejection',function(e){ show('promise: '+((e.reason&&e.reason.message)||e.reason)); });
  window.__showErr=show; })();
@@ -1800,7 +1844,7 @@ var __dlog=[]; function dlog(m){ __dlog.push(new Date().toISOString().slice(11,1
 window.dlog=dlog;
 function showDiag(){ function t(f){ try{ return f(); }catch(e){ return 'ERR '+e.message; } }
  var auth=t(function(){ var ss=Object.keys(sessionStorage).filter(function(k){return /auth/.test(k);}), ls=Object.keys(localStorage).filter(function(k){return /auth/.test(k);}); return 'sessionStorage: '+(ss.join(',')||'none')+' | localStorage: '+(ls.join(',')||'none'); });
- var lines=['Build: 2026-11-16 10:46 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
+ var lines=['Build: 2026-11-18 11:20 UTC', 'URL: '+location.href, 'Browser: '+navigator.userAgent,
   'Hosted mode: '+!!window.__HOSTED__, 'Boots: '+(window.__bootCount||0),
   'sessionStorage works: '+t(function(){ sessionStorage.setItem('__d','1'); sessionStorage.removeItem('__d'); return 'yes'; }),
   'Auth tokens: '+auth,
